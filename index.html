@@ -35,7 +35,8 @@
         const darkMap = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '© OpenStreetMap © CARTO', subdomains: 'abcd', maxZoom: 20 });
         const satelliteMap = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: '© Esri', maxZoom: 20 });
 
-        const map = L.map('map', { zoomControl: false, attributionControl: false, layers: [darkMap] }).setView([29.965, -90.007], 15);
+        // Pulled back zoom to view the entire city initially
+        const map = L.map('map', { zoomControl: false, attributionControl: false, layers: [darkMap] }).setView([29.95, -90.07], 12);
         L.control.zoom({ position: 'topright' }).addTo(map);
 
         const guiltyLayer = L.layerGroup().addTo(map);
@@ -68,7 +69,8 @@
             const n = bounds.getNorth(); const s = bounds.getSouth();
             const e = bounds.getEast(); const w = bounds.getWest();
 
-            const SOQL_QUERY = encodeURI(`?$select=geoaddress AS address, prevhearingresult AS status, casefiled AS notice_date, the_geom AS location, caseno AS casenumber&$where=within_box(the_geom, ${n}, ${w}, ${s}, ${e}) AND prevhearingresult IN('Guilty', 'Uncommitted')&$limit=2000`);
+            // Removed the strict 'prevhearingresult' backend filter. Expanded limit to 50,000.
+            const SOQL_QUERY = encodeURI(`?$select=geoaddress AS address, prevhearingresult AS status, casefiled AS notice_date, the_geom AS location, caseno AS casenumber&$where=within_box(the_geom, ${n}, ${w}, ${s}, ${e})&$limit=50000`);
 
             try {
                 const response = await fetch(API_ENDPOINT + SOQL_QUERY);
@@ -87,7 +89,12 @@
                     const lng = prop.location.coordinates[0];
                     heatPoints.push([lat, lng]);
 
-                    let status = (prop.status && prop.status.startsWith('Guilty')) ? 'Guilty' : 'Uncommitted';
+                    // Smarter frontend sorting: defaults to 'Uncommitted', marks as 'Guilty' if the word exists anywhere.
+                    let status = 'Uncommitted';
+                    if (prop.status && prop.status.toLowerCase().includes('guilty')) {
+                        status = 'Guilty';
+                    }
+
                     const noticeDate = parseSocrataDate(prop.notice_date);
                     const deadlineDate = new Date(noticeDate); deadlineDate.setDate(deadlineDate.getDate() + 30);
 
