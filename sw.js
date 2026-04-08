@@ -1,33 +1,19 @@
-const CACHE_NAME = 'nwc-v1.4';
+const CACHE_NAME = 'nwc-v1.5';
 const ASSETS = [
-    './',
-    './index.html',
-    './manifest.json',
+    './', './index.html', './manifest.json',
     'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
     'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
-    'https://unpkg.com/leaflet.heat/dist/leaflet-heat.js',
-    'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-    'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-    'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png'
+    'https://unpkg.com/leaflet.heat/dist/leaflet-heat.js'
 ];
 
-self.addEventListener('install', (event) => {
-    event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));
-});
+self.addEventListener('install', (e) => e.waitUntil(caches.open(CACHE_NAME).then((c) => c.addAll(ASSETS))));
+self.addEventListener('activate', (e) => e.waitUntil(caches.keys().then((n) => Promise.all(n.map((c) => { if (c !== CACHE_NAME) return caches.delete(c); })))));
 
-self.addEventListener('activate', (event) => {
-    event.waitUntil(caches.keys().then((names) => Promise.all(names.map((c) => { if (c !== CACHE_NAME) return caches.delete(c); }))));
-});
-
-self.addEventListener('fetch', (event) => {
-    const url = event.request.url;
-    if (url.includes('cartocdn.com') || url.includes('arcgisonline.com') || url.includes('githubusercontent.com') || url.includes('iconify.design') || url.includes('unpkg.com')) {
-        event.respondWith(caches.match(event.request).then(res => res || fetch(event.request).then(netRes => caches.open(CACHE_NAME).then(cache => { cache.put(event.request, netRes.clone()); return netRes; }))));
+self.addEventListener('fetch', (e) => {
+    const url = e.request.url;
+    if (url.includes('cartocdn.com') || url.includes('arcgisonline.com') || url.includes('unpkg.com')) {
+        e.respondWith(caches.match(e.request).then(res => res || fetch(e.request).then(netRes => caches.open(CACHE_NAME).then(cache => { cache.put(e.request, netRes.clone()); return netRes; }))));
         return; 
     }
-    if (url.includes('index.html') || url === self.location.origin + '/') {
-        event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
-    } else {
-        event.respondWith(caches.match(event.request).then((response) => response || fetch(event.request)));
-    }
+    e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
 });
