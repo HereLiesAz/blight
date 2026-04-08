@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
     <style>
         body, html { margin: 0; padding: 0; height: 100%; background-color: #0b0b0b; font-family: -apple-system, sans-serif; overflow: hidden; }
         #map { width: 100%; height: 100vh; }
@@ -29,16 +30,48 @@
         .route-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 8px; }
         .route-btn { background: #333; color: #fff; border: 1px solid #555; padding: 6px; border-radius: 4px; cursor: pointer; font-weight: bold; text-align: center; font-size: 12px; }
         .img-preview { max-width: 100%; border-radius: 4px; margin-top: 5px; display: none; }
+        
+        /* Tactical Overlays */
+        #camo-ui { display: none; position: absolute; inset: 0; z-index: 9999; background: #87CEEB; color: #fff; text-align: center; padding-top: 20vh; font-family: -apple-system, sans-serif; }
+        #camo-ui h1 { font-size: 80px; margin: 0; font-weight: 300; }
+        #camo-ui p { font-size: 24px; margin: 10px 0; }
+        #camo-trigger { position: absolute; top: 0; left: 0; width: 80px; height: 80px; z-index: 9998; background: transparent; }
+        #qr-modal { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; padding: 20px; border-radius: 8px; z-index: 2001; }
+        #qr-modal canvas { max-width: 100%; }
+        #qr-close { margin-top: 10px; width: 100%; padding: 8px; background: #333; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+        
+        .time-panel { position: absolute; bottom: 20px; left: 20px; z-index: 1000; background: rgba(17,17,17,0.9); padding: 10px; border: 1px solid #444; border-radius: 8px; width: 250px; }
+        .time-panel input[type=range] { width: 100%; }
+        .time-panel label { color: #FFBF00; font-family: monospace; font-size: 12px; display: block; margin-bottom: 5px; text-align: center;}
     </style>
 </head>
 <body>
     <div id="loading">Scanning Sector...</div>
     <div id="sync-status">📡 ONLINE</div>
+    <div id="camo-trigger" onclick="toggleCamo()"></div>
+    
+    <div id="camo-ui" onclick="toggleCamo()">
+        <p>New Orleans</p>
+        <h1>72°</h1>
+        <p>Partly Cloudy</p>
+        <p>H:78° L:65°</p>
+    </div>
+
+    <div id="qr-modal">
+        <div id="qrcode"></div>
+        <button id="qr-close" onclick="document.getElementById('qr-modal').style.display='none'">Close Link</button>
+    </div>
+
     <div id="map"></div>
     
+    <div class="time-panel">
+        <label id="time-label">⏳ Timeline: ALL TIME</label>
+        <input type="range" id="time-slider" min="0" max="12" value="12" onchange="filterTimeline()">
+    </div>
+
     <div class="hud-controls">
         <button id="install-btn" class="hud-btn">✨ Install PWA</button>
-        <button id="export-btn" class="hud-btn" onclick="exportStash()">🌿 Dump Intel</button>
+        <button id="net-btn" class="hud-btn" onclick="generateQR()">🕸️ Beam Intel</button>
         <button id="gps-toggle" class="hud-btn">📍 Track GPS</button>
         <button id="ghost-btn" class="hud-btn" onclick="ghostProtocol()">⚠️ GHOST</button>
     </div>
@@ -54,6 +87,7 @@
         const heatLayer = L.heatLayer([], { radius: 25, blur: 15, maxZoom: 17 }).addTo(map);
         L.control.layers({ "Tactical Dark": darkMap, "Satellite": satelliteMap }, { "<span style='color: #ff0000;'>Guilty</span>": guiltyLayer, "<span style='color: #FFBF00;'>Uncommitted</span>": uncommittedLayer, "🔥 Heatmap": heatLayer }, { position: 'topright', collapsed: false }).addTo(map);
 
+        let masterData = [];
         let syncQueue = new Set();
         const syncUI = document.getElementById('sync-status');
         
@@ -63,9 +97,11 @@
         function getNote(addr) { try { return atob(localStorage.getItem('txt_' + addr) || ''); } catch { return ''; } }
         function getImg(addr) { return localStorage.getItem('img_' + addr) || ''; }
         
-        window.saveNote = function(addr, val) { 
-            localStorage.setItem('txt_' + addr, btoa(val)); 
-            if(!navigator.onLine) syncQueue.add(addr); 
+        window.saveNote = function(addr, val) { localStorage.setItem('txt_' + addr, btoa(val)); if(!navigator.onLine) syncQueue.add(addr); };
+
+        window.toggleCamo = function() {
+            const ui = document.getElementById('camo-ui');
+            ui.style.display = ui.style.display === 'block' ? 'none' : 'block';
         };
 
         window.ghostProtocol = function() {
@@ -75,19 +111,16 @@
             setTimeout(() => location.reload(), 800);
         };
 
-        window.exportStash = function() {
-            let dump = "TACTICAL STASH EXPORT\\n=====================\\n\\n";
+        window.generateQR = function() {
+            let stash = [];
             for (let i = 0; i < localStorage.length; i++) {
                 const key = localStorage.key(i);
-                if (key.startsWith('txt_')) {
-                    const addr = key.replace('txt_', '');
-                    dump += `🎯 ${addr}\\n📝 ${getNote(addr)}\\n[Image Data: ${getImg(addr) ? 'YES' : 'NO'}]\\n---\\n`;
-                }
+                if (key.startsWith('txt_')) stash.push({ a: key.replace('txt_', ''), n: getNote(key.replace('txt_', '')) });
             }
-            const a = document.createElement("a");
-            a.href = URL.createObjectURL(new Blob([dump], { type: "text/plain" }));
-            a.download = `nwc_intel.txt`;
-            a.click();
+            if(stash.length === 0) return alert('No intel to beam.');
+            document.getElementById('qrcode').innerHTML = '';
+            new QRCode(document.getElementById("qrcode"), { text: JSON.stringify(stash), width: 256, height: 256, correctLevel: QRCode.CorrectLevel.L });
+            document.getElementById('qr-modal').style.display = 'block';
         };
 
         window.captureOptics = function(event, addr, imgId) {
@@ -97,15 +130,11 @@
             reader.onload = e => {
                 const img = new Image();
                 img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    const ctx = canvas.getContext('2d');
-                    const scale = 300 / img.width;
-                    canvas.width = 300; canvas.height = img.height * scale;
-                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d'); const scale = 300 / img.width;
+                    canvas.width = 300; canvas.height = img.height * scale; ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                     const b64 = canvas.toDataURL('image/jpeg', 0.5);
                     localStorage.setItem('img_' + addr, b64);
-                    const el = document.getElementById(imgId);
-                    el.src = b64; el.style.display = 'block';
+                    document.getElementById(imgId).src = b64; document.getElementById(imgId).style.display = 'block';
                     if(!navigator.onLine) syncQueue.add(addr);
                 };
                 img.src = e.target.result;
@@ -113,24 +142,52 @@
             reader.readAsDataURL(file);
         };
 
+        function parseSocrataDate(dateStr) {
+            if (!dateStr || typeof dateStr !== 'string') return new Date();
+            if (dateStr.includes('T')) { const p = dateStr.split('T')[0].split('-'); return new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2])); }
+            if (dateStr.length >= 8 && !dateStr.includes('-')) { return new Date(parseInt(dateStr.substring(0, 4)), parseInt(dateStr.substring(4, 6)) - 1, parseInt(dateStr.substring(6, 8))); }
+            const d = new Date(dateStr); return isNaN(d.getTime()) ? new Date() : d;
+        }
+
+        window.filterTimeline = function() {
+            const slider = document.getElementById('time-slider');
+            const monthsBack = 12 - parseInt(slider.value);
+            document.getElementById('time-label').innerText = monthsBack === 0 ? "⏳ Timeline: ALL TIME" : `⏳ Timeline: PAST ${parseInt(slider.value)} MONTHS`;
+            
+            const cutoffDate = new Date();
+            cutoffDate.setMonth(cutoffDate.getMonth() - parseInt(slider.value));
+
+            guiltyLayer.clearLayers(); uncommittedLayer.clearLayers();
+            let activeHeat = [];
+
+            masterData.forEach(item => {
+                if(monthsBack === 0 || item.date >= cutoffDate) {
+                    activeHeat.push([item.lat, item.lng]);
+                    addMarker(item.lat, item.lng, item.prop, false);
+                }
+            });
+            heatLayer.setLatLngs(activeHeat);
+        };
+
         async function fetchSectorData() {
             const SOQL_QUERY = encodeURI(`?$select=geoaddress AS address, prevhearingresult AS status, casefiled AS notice_date, the_geom AS location, caseno AS casenumber&$where=within_box(the_geom, ${map.getBounds().getNorth()}, ${map.getBounds().getWest()}, ${map.getBounds().getSouth()}, ${map.getBounds().getEast()})&$limit=50000`);
             try {
                 const response = await fetch('https://data.nola.gov/resource/gjzc-adg8.json' + SOQL_QUERY);
                 const data = await response.json();
-                let heatPoints = [];
+                
                 data.forEach(prop => {
-                    if (!prop.location) return;
+                    if (!prop.location || masterData.some(m => m.caseno === prop.casenumber)) return;
                     const lat = prop.location.coordinates[1]; const lng = prop.location.coordinates[0];
-                    heatPoints.push([lat, lng]);
                     let status = (prop.status && prop.status.toLowerCase().includes('guilty')) ? 'Guilty' : 'Uncommitted';
-                    addMarker(lat, lng, { address: prop.address || 'Unknown', status: status });
+                    const noticeDate = parseSocrataDate(prop.notice_date);
+                    
+                    masterData.push({ caseno: prop.casenumber, lat: lat, lng: lng, date: noticeDate, prop: { address: prop.address || 'Unknown', status: status, noticeDate: noticeDate.toLocaleDateString(), deadline: new Date(noticeDate.setDate(noticeDate.getDate() + 30)).toLocaleDateString() }});
                 });
-                heatLayer.setLatLngs(heatLayer.getLatLngs().concat(heatPoints));
+                filterTimeline();
             } catch (error) { console.error("Signal Lost"); }
         }
 
-        function addMarker(lat, lng, property) {
+        function addMarker(lat, lng, property, saveToMaster = true) {
             const isGuilty = property.status === 'Guilty';
             const marker = L.circleMarker([lat, lng], { radius: 8, fillColor: isGuilty ? '#ff0000' : '#FFBF00', color: '#fff', weight: 1, fillOpacity: 0.8 });
             if (isGuilty) guiltyLayer.addLayer(marker); else uncommittedLayer.addLayer(marker);
