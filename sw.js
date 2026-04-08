@@ -33,8 +33,23 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-    // Network First for index.html, else Cache First
-    if (event.request.url.includes('index.html') || event.request.url === self.location.origin + '/') {
+    const url = event.request.url;
+
+    if (url.includes('cartocdn.com') || url.includes('githubusercontent.com') || url.includes('iconify.design')) {
+        event.respondWith(
+            caches.match(event.request).then(res => 
+                res || fetch(event.request).then(netRes => 
+                    caches.open(CACHE_NAME).then(cache => { 
+                        cache.put(event.request, netRes.clone()); 
+                        return netRes; 
+                    })
+                )
+            )
+        );
+        return; 
+    }
+
+    if (url.includes('index.html') || url === self.location.origin + '/') {
         event.respondWith(
             fetch(event.request).catch(() => caches.match(event.request))
         );
