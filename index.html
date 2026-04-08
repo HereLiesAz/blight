@@ -32,10 +32,11 @@
     <button id="gps-toggle" class="gps-toggle">Follow GPS</button>
 
     <script>
-        const darkMap = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; OpenStreetMap &copy; CARTO', subdomains: 'abcd', maxZoom: 20 });
-        const satelliteMap = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: '&copy; Esri', maxZoom: 20 });
+        const darkMap = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '© OpenStreetMap © CARTO', subdomains: 'abcd', maxZoom: 20 });
+        const satelliteMap = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: '© Esri', maxZoom: 20 });
 
-        const map = L.map('map', { zoomControl: false, attributionControl: false, layers: [darkMap] }).setView([29.965, -90.007], 15);
+        // Pulled back zoom to view the entire city initially
+        const map = L.map('map', { zoomControl: false, attributionControl: false, layers: [darkMap] }).setView([29.95, -90.07], 12);
         L.control.zoom({ position: 'topright' }).addTo(map);
 
         const guiltyLayer = L.layerGroup().addTo(map);
@@ -45,7 +46,9 @@
         L.control.layers({ "Tactical Dark": darkMap, "Satellite Intel": satelliteMap }, { "<span style='color: #ff0000;'>Guilty Properties</span>": guiltyLayer, "<span style='color: #FFBF00;'>Uncommitted</span>": uncommittedLayer, "🔥 Density Map": heatLayer }, { position: 'topright', collapsed: false }).addTo(map);
 
         const API_ENDPOINT = 'https://data.nola.gov/resource/gjzc-adg8.json';
-        const SOQL_QUERY = encodeURI(`?$select=geoaddress AS address, prevhearingresult AS status, casefiled AS notice_date, the_geom AS location, caseno AS casenumber&$where=within_box(the_geom, 29.95, -90.03, 29.98, -89.98) AND prevhearingresult IN('Guilty', 'Uncommitted')`);
+        
+        // Removed spatial bounding box; expanded fetch limit to 50,000
+        const SOQL_QUERY = encodeURI(`?$select=geoaddress AS address, prevhearingresult AS status, casefiled AS notice_date, the_geom AS location, caseno AS casenumber&$where=prevhearingresult IN('Guilty', 'Uncommitted')&$limit=50000`);
 
         function getNote(addr) { try { return atob(localStorage.getItem('nwc_note_' + addr) || ''); } catch { return ''; } }
         window.saveNote = function(addr, val) { localStorage.setItem('nwc_note_' + addr, btoa(val)); };
