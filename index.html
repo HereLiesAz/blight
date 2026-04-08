@@ -8,102 +8,22 @@
     <meta name="theme-color" content="#0b0b0b">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     <style>
-        body, html {
-            margin: 0;
-            padding: 0;
-            height: 100%;
-            background-color: #0b0b0b;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            overflow: hidden;
-        }
-        #map {
-            width: 100%;
-            height: 100vh;
-        }
-        #loading {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: #FFBF00;
-            font-family: monospace;
-            font-size: 16px;
-            z-index: 2000;
-            background: rgba(11,11,11,0.9);
-            padding: 12px 24px;
-            border: 1px solid #FFBF00;
-            border-radius: 4px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            pointer-events: none;
-        }
-        .popup-content {
-            font-size: 14px;
-            color: #333;
-        }
-        .popup-content h3 {
-            margin: 0 0 8px 0;
-            font-size: 16px;
-            border-bottom: 1px solid #ccc;
-            padding-bottom: 4px;
-        }
-        .popup-content p {
-            margin: 4px 0;
-        }
-        .gps-toggle {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            z-index: 1000;
-            background: #222;
-            color: #eee;
-            border: 2px solid #444;
-            border-radius: 8px;
-            padding: 10px 15px;
-            cursor: pointer;
-            min-width: 44px;
-            min-height: 44px;
-            font-weight: bold;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .leaflet-bar a {
-            width: 44px !important;
-            height: 44px !important;
-            line-height: 44px !important;
-            font-size: 22px !important;
-        }
-        .gps-toggle.active {
-            background: #007bff;
-            border-color: #0056b3;
-        }
-        .leaflet-control-layers {
-            background: #222 !important;
-            color: #eee !important;
-            border: 2px solid #444 !important;
-            border-radius: 8px !important;
-        }
-        .copy-btn {
-            margin-top: 10px;
-            width: 100%;
-            background: #222;
-            color: #FFBF00;
-            border: 1px solid #FFBF00;
-            padding: 8px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-family: monospace;
-            text-transform: uppercase;
-            font-weight: bold;
-            transition: all 0.2s ease;
-        }
-        .copy-btn:active {
-            background: #FFBF00;
-            color: #0b0b0b;
-        }
+        body, html { margin: 0; padding: 0; height: 100%; background-color: #0b0b0b; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; }
+        #map { width: 100%; height: 100vh; }
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #FFBF00; font-family: monospace; font-size: 16px; z-index: 2000; background: rgba(11,11,11,0.9); padding: 12px 24px; border: 1px solid #FFBF00; border-radius: 4px; text-transform: uppercase; pointer-events: none; }
+        .popup-content { font-size: 14px; color: #333; min-width: 200px; }
+        .popup-content h3 { margin: 0 0 8px 0; font-size: 16px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+        .popup-content p { margin: 4px 0; }
+        .gps-toggle { position: absolute; bottom: 20px; right: 20px; z-index: 1000; background: #222; color: #eee; border: 2px solid #444; border-radius: 8px; padding: 10px 15px; cursor: pointer; min-width: 44px; min-height: 44px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; }
+        .leaflet-bar a { width: 44px !important; height: 44px !important; line-height: 44px !important; font-size: 22px !important; }
+        .gps-toggle.active { background: #007bff; border-color: #0056b3; }
+        .leaflet-control-layers { background: #222 !important; color: #eee !important; border: 2px solid #444 !important; border-radius: 8px !important; }
+        .copy-btn { margin-top: 8px; width: 100%; background: #222; color: #FFBF00; border: 1px solid #FFBF00; padding: 6px; border-radius: 4px; cursor: pointer; font-family: monospace; font-weight: bold; }
+        .note-stash { width: 100%; box-sizing: border-box; background: #111; color: #0f0; border: 1px solid #444; margin-top: 8px; height: 60px; font-family: monospace; resize: none; padding: 4px; border-radius: 4px; }
+        .route-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 8px; }
+        .route-btn { background: #333; color: #fff; border: 1px solid #555; padding: 6px; border-radius: 4px; cursor: pointer; font-weight: bold; text-align: center; text-decoration: none; display: block; font-size: 12px;}
     </style>
 </head>
 <body>
@@ -112,222 +32,99 @@
     <button id="gps-toggle" class="gps-toggle">Follow GPS</button>
 
     <script>
-        const darkMap = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; OpenStreetMap &copy; CARTO',
-            subdomains: 'abcd',
-            maxZoom: 20
-        });
+        const darkMap = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; OpenStreetMap &copy; CARTO', subdomains: 'abcd', maxZoom: 20 });
+        const satelliteMap = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: '&copy; Esri', maxZoom: 20 });
 
-        const satelliteMap = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-            attribution: '&copy; Esri',
-            maxZoom: 20
-        });
-
-        const map = L.map('map', {
-            zoomControl: false,
-            attributionControl: false,
-            layers: [darkMap] 
-        }).setView([29.965, -90.007], 15);
-
+        const map = L.map('map', { zoomControl: false, attributionControl: false, layers: [darkMap] }).setView([29.965, -90.007], 15);
         L.control.zoom({ position: 'topright' }).addTo(map);
 
-        // Tactical Overlay Groups
         const guiltyLayer = L.layerGroup().addTo(map);
         const uncommittedLayer = L.layerGroup().addTo(map);
+        const heatLayer = L.heatLayer([], { radius: 25, blur: 15, maxZoom: 17 }).addTo(map);
 
-        L.control.layers({
-            "Tactical Dark": darkMap,
-            "Satellite Intel": satelliteMap
-        }, {
-            "<span style='color: #ff0000;'>Guilty Properties</span>": guiltyLayer,
-            "<span style='color: #FFBF00;'>Uncommitted Properties</span>": uncommittedLayer
-        }, { position: 'topright', collapsed: false }).addTo(map);
+        L.control.layers({ "Tactical Dark": darkMap, "Satellite Intel": satelliteMap }, { "<span style='color: #ff0000;'>Guilty Properties</span>": guiltyLayer, "<span style='color: #FFBF00;'>Uncommitted</span>": uncommittedLayer, "🔥 Density Map": heatLayer }, { position: 'topright', collapsed: false }).addTo(map);
 
         const API_ENDPOINT = 'https://data.nola.gov/resource/gjzc-adg8.json';
-        const SOQL_QUERY = encodeURI(
-            `?$select=geoaddress AS address, prevhearingresult AS status, casefiled AS notice_date, the_geom AS location, caseno AS casenumber` +
-            `&$where=within_box(the_geom, 29.95, -90.03, 29.98, -89.98) AND prevhearingresult IN('Guilty', 'Uncommitted')`
-        );
+        const SOQL_QUERY = encodeURI(`?$select=geoaddress AS address, prevhearingresult AS status, casefiled AS notice_date, the_geom AS location, caseno AS casenumber&$where=within_box(the_geom, 29.95, -90.03, 29.98, -89.98) AND prevhearingresult IN('Guilty', 'Uncommitted')`);
+
+        function getNote(addr) { try { return atob(localStorage.getItem('nwc_note_' + addr) || ''); } catch { return ''; } }
+        window.saveNote = function(addr, val) { localStorage.setItem('nwc_note_' + addr, btoa(val)); };
 
         function parseSocrataDate(dateStr) {
             if (!dateStr || typeof dateStr !== 'string') return new Date();
-            if (dateStr.includes('T')) {
-                const dateParts = dateStr.split('T')[0].split('-');
-                return new Date(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1, parseInt(dateParts[2]));
-            }
-            if (dateStr.length >= 8 && !dateStr.includes('-')) {
-                const y = parseInt(dateStr.substring(0, 4));
-                const m = parseInt(dateStr.substring(4, 6)) - 1;
-                const d = parseInt(dateStr.substring(6, 8));
-                return new Date(y, m, d);
-            }
-            const d = new Date(dateStr);
-            return isNaN(d.getTime()) ? new Date() : d;
+            if (dateStr.includes('T')) { const p = dateStr.split('T')[0].split('-'); return new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2])); }
+            if (dateStr.length >= 8 && !dateStr.includes('-')) { return new Date(parseInt(dateStr.substring(0, 4)), parseInt(dateStr.substring(4, 6)) - 1, parseInt(dateStr.substring(6, 8))); }
+            const d = new Date(dateStr); return isNaN(d.getTime()) ? new Date() : d;
         }
 
         async function fetchProperties() {
             try {
                 const response = await fetch(API_ENDPOINT + SOQL_QUERY);
                 const data = await response.json();
-                processProperties(data);
+                document.getElementById('loading').style.display = 'none';
+                
+                const heatPoints = [];
+                data.forEach(prop => {
+                    if (!prop.location || !prop.location.coordinates) return;
+                    const lat = prop.location.coordinates[1];
+                    const lng = prop.location.coordinates[0];
+                    heatPoints.push([lat, lng]);
+
+                    let status = (prop.status && prop.status.startsWith('Guilty')) ? 'Guilty' : 'Uncommitted';
+                    const noticeDate = parseSocrataDate(prop.notice_date);
+                    const deadlineDate = new Date(noticeDate); deadlineDate.setDate(deadlineDate.getDate() + 30);
+
+                    addMarker(lat, lng, { address: prop.address || 'Unknown', status: status, noticeDate: noticeDate.toLocaleDateString(), deadline: deadlineDate.toLocaleDateString() });
+                });
+                heatLayer.setLatLngs(heatPoints);
             } catch (error) {
-                console.error('Error fetching data:', error);
                 document.getElementById('loading').innerText = 'Data intercept failed.';
                 document.getElementById('loading').style.color = '#ff0000';
-                document.getElementById('loading').style.borderColor = '#ff0000';
             }
-        }
-
-        function processProperties(data) {
-            document.getElementById('loading').style.display = 'none';
-
-            data.forEach(prop => {
-                if (!prop.location || !prop.location.coordinates) return;
-
-                const lat = prop.location.coordinates[1];
-                const lng = prop.location.coordinates[0];
-
-                let status = 'Uncommitted';
-                if (prop.status && prop.status.startsWith('Guilty')) {
-                    status = 'Guilty';
-                }
-
-                const noticeDate = parseSocrataDate(prop.notice_date);
-                const deadlineDate = new Date(noticeDate);
-                deadlineDate.setDate(deadlineDate.getDate() + 30);
-
-                const formattedNoticeDate = noticeDate.toLocaleDateString();
-                const formattedDeadline = deadlineDate.toLocaleDateString();
-
-                addMarker(lat, lng, {
-                    address: prop.address || 'Unknown Address',
-                    status: status,
-                    noticeDate: formattedNoticeDate,
-                    deadline: formattedDeadline
-                });
-            });
         }
 
         function addMarker(lat, lng, property) {
             const isGuilty = property.status === 'Guilty';
-            const color = isGuilty ? '#ff0000' : '#FFBF00';
-
-            const marker = L.circleMarker([lat, lng], {
-                radius: 8,
-                fillColor: color,
-                color: '#fff',
-                weight: 1,
-                opacity: 1,
-                fillOpacity: 0.8
-            });
-
-            if (isGuilty) {
-                guiltyLayer.addLayer(marker);
-            } else {
-                uncommittedLayer.addLayer(marker);
-            }
+            const marker = L.circleMarker([lat, lng], { radius: 8, fillColor: isGuilty ? '#ff0000' : '#FFBF00', color: '#fff', weight: 1, opacity: 1, fillOpacity: 0.8 });
+            if (isGuilty) { guiltyLayer.addLayer(marker); } else { uncommittedLayer.addLayer(marker); }
 
             const safeAddress = property.address.replace(/'/g, "\\'");
-
-            const popupContent = `
+            marker.bindPopup(`
 <div class="popup-content">
   <h3>${property.address}</h3>
-  <p><b>Status:</b> ${property.status}</p>
-  <p><b>Notice Date:</b> ${property.noticeDate}</p>
-  <p><b>30-Day Deadline:</b> ${property.deadline}</p>
+  <p><b>Status:</b> ${property.status} | <b>Deadline:</b> ${property.deadline}</p>
+  <textarea class="note-stash" placeholder="Local stash..." onchange="saveNote('${safeAddress}', this.value)">${getNote(property.address)}</textarea>
   <button class="copy-btn" onclick="copyIntel(this, '${safeAddress}', '${property.status}', '${property.noticeDate}', '${property.deadline}')">Copy Intel</button>
-</div>
-            `.trim();
-
-            marker.bindPopup(popupContent);
+  <div class="route-grid">
+    <button class="route-btn" onclick="window.open('https://maps.apple.com/?daddr=${lat},${lng}&dirflg=d')">🍎 Route</button>
+    <button class="route-btn" onclick="window.open('https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}')">🗺️ Route</button>
+  </div>
+</div>`.trim());
         }
 
         window.copyIntel = function(btn, address, status, notice, deadline) {
-            const text = `🎯 TARGET: ${address}\\n⚠️ STATUS: ${status}\\n📅 NOTICE: ${notice}\\n⏳ DEADLINE: ${deadline}`;
-            
-            navigator.clipboard.writeText(text).then(() => {
-                const originalText = btn.innerText;
-                btn.innerText = 'COPIED!';
-                btn.style.background = '#FFBF00';
-                btn.style.color = '#0b0b0b';
-                setTimeout(() => {
-                    btn.innerText = originalText;
-                    btn.style.background = '#222';
-                    btn.style.color = '#FFBF00';
-                }, 2000);
-            }).catch(err => {
-                console.error('Failed to copy: ', err);
+            navigator.clipboard.writeText(`🎯 ${address}\\n⚠️ ${status}\\n📅 ${notice}\\n⏳ ${deadline}`).then(() => {
+                const orig = btn.innerText; btn.innerText = 'COPIED!'; btn.style.background = '#FFBF00'; btn.style.color = '#0b0b0b';
+                setTimeout(() => { btn.innerText = orig; btn.style.background = '#222'; btn.style.color = '#FFBF00'; }, 2000);
             });
         };
 
-        const gpsToggle = document.getElementById('gps-toggle');
-        let watchId = null;
-        let userMarker = null;
-        let followUser = true;
-
-        map.on('dragstart', () => {
-            if (watchId !== null) followUser = false;
-        });
-
+        const gpsToggle = document.getElementById('gps-toggle'); let watchId = null; let userMarker = null; let followUser = true;
+        map.on('dragstart', () => { if (watchId !== null) followUser = false; });
         gpsToggle.addEventListener('click', () => {
             if (watchId === null) {
                 if ("geolocation" in navigator) {
-                    gpsToggle.classList.add('active');
-                    followUser = true;
-                    watchId = navigator.geolocation.watchPosition(
-                        (position) => {
-                            const { latitude, longitude } = position.coords;
-                            if (userMarker) {
-                                userMarker.setLatLng([latitude, longitude]);
-                            } else {
-                                userMarker = L.circleMarker([latitude, longitude], {
-                                    radius: 10,
-                                    fillColor: '#007bff',
-                                    color: '#fff',
-                                    weight: 2,
-                                    opacity: 1,
-                                    fillOpacity: 0.9
-                                }).addTo(map);
-                            }
-                            if (followUser) {
-                                map.setView([latitude, longitude]);
-                            }
-                        },
-                        (error) => {
-                            console.error('GPS error:', error);
-                            stopGps();
-                            alert('Unable to retrieve your location.');
-                        },
-                        { enableHighAccuracy: true }
-                    );
-                } else {
-                    alert('Geolocation is not supported by your browser.');
+                    gpsToggle.classList.add('active'); followUser = true;
+                    watchId = navigator.geolocation.watchPosition((pos) => {
+                        const { latitude, longitude } = pos.coords;
+                        if (userMarker) { userMarker.setLatLng([latitude, longitude]); } else { userMarker = L.circleMarker([latitude, longitude], { radius: 10, fillColor: '#007bff', color: '#fff', weight: 2, opacity: 1, fillOpacity: 0.9 }).addTo(map); }
+                        if (followUser) { map.setView([latitude, longitude]); }
+                    }, (err) => { stopGps(); }, { enableHighAccuracy: true });
                 }
-            } else {
-                stopGps();
-            }
+            } else { stopGps(); }
         });
-
-        function stopGps() {
-            if (watchId !== null) {
-                navigator.geolocation.clearWatch(watchId);
-                watchId = null;
-            }
-            gpsToggle.classList.remove('active');
-            if (userMarker) {
-                map.removeLayer(userMarker);
-                userMarker = null;
-            }
-        }
-
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js').catch(err => {
-                    console.error('ServiceWorker registration failed: ', err);
-                });
-            });
-        }
-
+        function stopGps() { if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; } gpsToggle.classList.remove('active'); if (userMarker) { map.removeLayer(userMarker); userMarker = null; } }
+        if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js'); }); }
         fetchProperties();
     </script>
 </body>
