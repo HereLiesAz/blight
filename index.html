@@ -12,7 +12,7 @@
     <style>
         body, html { margin: 0; padding: 0; height: 100%; background-color: #0b0b0b; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; }
         #map { width: 100%; height: 100vh; }
-        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #FFBF00; font-family: monospace; font-size: 16px; z-index: 2000; background: rgba(11,11,11,0.9); padding: 12px 24px; border: 1px solid #FFBF00; border-radius: 4px; text-transform: uppercase; pointer-events: none; }
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #FFBF00; font-family: monospace; font-size: 16px; z-index: 2000; background: rgba(11,11,11,0.9); padding: 12px 24px; border: 1px solid #FFBF00; border-radius: 4px; text-transform: uppercase; pointer-events: none; display: none; }
         .popup-content { font-size: 14px; color: #333; min-width: 200px; }
         .popup-content h3 { margin: 0 0 8px 0; font-size: 16px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
         .popup-content p { margin: 4px 0; }
@@ -27,7 +27,7 @@
     </style>
 </head>
 <body>
-    <div id="loading">Intercepting Data...</div>
+    <div id="loading">Scanning Sector...</div>
     <div id="map"></div>
     <button id="gps-toggle" class="gps-toggle">Follow GPS</button>
 
@@ -35,8 +35,7 @@
         const darkMap = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '© OpenStreetMap © CARTO', subdomains: 'abcd', maxZoom: 20 });
         const satelliteMap = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: '© Esri', maxZoom: 20 });
 
-        // Pulled back zoom to view the entire city initially
-        const map = L.map('map', { zoomControl: false, attributionControl: false, layers: [darkMap] }).setView([29.95, -90.07], 12);
+        const map = L.map('map', { zoomControl: false, attributionControl: false, layers: [darkMap] }).setView([29.965, -90.007], 15);
         L.control.zoom({ position: 'topright' }).addTo(map);
 
         const guiltyLayer = L.layerGroup().addTo(map);
@@ -46,9 +45,8 @@
         L.control.layers({ "Tactical Dark": darkMap, "Satellite Intel": satelliteMap }, { "<span style='color: #ff0000;'>Guilty Properties</span>": guiltyLayer, "<span style='color: #FFBF00;'>Uncommitted</span>": uncommittedLayer, "🔥 Density Map": heatLayer }, { position: 'topright', collapsed: false }).addTo(map);
 
         const API_ENDPOINT = 'https://data.nola.gov/resource/gjzc-adg8.json';
-        
-        // Removed spatial bounding box; expanded fetch limit to 50,000
-        const SOQL_QUERY = encodeURI(`?$select=geoaddress AS address, prevhearingresult AS status, casefiled AS notice_date, the_geom AS location, caseno AS casenumber&$where=prevhearingresult IN('Guilty', 'Uncommitted')&$limit=50000`);
+        const loadedCases = new Set();
+        let heatPoints = [];
 
         function getNote(addr) { try { return atob(localStorage.getItem('nwc_note_' + addr) || ''); } catch { return ''; } }
         window.saveNote = function(addr, val) { localStorage.setItem('nwc_note_' + addr, btoa(val)); };
@@ -60,15 +58,31 @@
             const d = new Date(dateStr); return isNaN(d.getTime()) ? new Date() : d;
         }
 
-        async function fetchProperties() {
+        async function fetchSectorData() {
+            const loadingUI = document.getElementById('loading');
+            loadingUI.style.display = 'block';
+            loadingUI.innerText = 'Scanning Sector...';
+            loadingUI.style.color = '#FFBF00';
+
+            const bounds = map.getBounds();
+            const n = bounds.getNorth(); const s = bounds.getSouth();
+            const e = bounds.getEast(); const w = bounds.getWest();
+
+            const SOQL_QUERY = encodeURI(`?$select=geoaddress AS address, prevhearingresult AS status, casefiled AS notice_date, the_geom AS location, caseno AS casenumber&$where=within_box(the_geom, ${n}, ${w}, ${s}, ${e}) AND prevhearingresult IN('Guilty', 'Uncommitted')&$limit=2000`);
+
             try {
                 const response = await fetch(API_ENDPOINT + SOQL_QUERY);
                 const data = await response.json();
-                document.getElementById('loading').style.display = 'none';
+                loadingUI.style.display = 'none';
                 
-                const heatPoints = [];
+                let newPins = false;
                 data.forEach(prop => {
-                    if (!prop.location || !prop.location.coordinates) return;
+                    if (!prop.location || !prop.location.coordinates || !prop.casenumber) return;
+                    if (loadedCases.has(prop.casenumber)) return;
+                    
+                    loadedCases.add(prop.casenumber);
+                    newPins = true;
+
                     const lat = prop.location.coordinates[1];
                     const lng = prop.location.coordinates[0];
                     heatPoints.push([lat, lng]);
@@ -79,10 +93,11 @@
 
                     addMarker(lat, lng, { address: prop.address || 'Unknown', status: status, noticeDate: noticeDate.toLocaleDateString(), deadline: deadlineDate.toLocaleDateString() });
                 });
-                heatLayer.setLatLngs(heatPoints);
+                
+                if (newPins) heatLayer.setLatLngs(heatPoints);
             } catch (error) {
-                document.getElementById('loading').innerText = 'Data intercept failed.';
-                document.getElementById('loading').style.color = '#ff0000';
+                loadingUI.innerText = 'Signal Lost.';
+                loadingUI.style.color = '#ff0000';
             }
         }
 
@@ -127,8 +142,11 @@
             } else { stopGps(); }
         });
         function stopGps() { if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; } gpsToggle.classList.remove('active'); if (userMarker) { map.removeLayer(userMarker); userMarker = null; } }
+        
+        map.on('moveend', fetchSectorData);
+        map.whenReady(fetchSectorData);
+
         if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js'); }); }
-        fetchProperties();
     </script>
 </body>
 </html>
