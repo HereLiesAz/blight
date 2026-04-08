@@ -16,9 +16,11 @@
         .popup-content { font-size: 14px; color: #333; min-width: 200px; }
         .popup-content h3 { margin: 0 0 8px 0; font-size: 16px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
         .popup-content p { margin: 4px 0; }
-        .gps-toggle { position: absolute; bottom: 20px; right: 20px; z-index: 1000; background: #222; color: #eee; border: 2px solid #444; border-radius: 8px; padding: 10px 15px; cursor: pointer; min-width: 44px; min-height: 44px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; }
+        .hud-controls { position: absolute; bottom: 20px; right: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 10px; }
+        .hud-btn { background: #222; color: #eee; border: 2px solid #444; border-radius: 8px; padding: 10px 15px; cursor: pointer; min-width: 44px; min-height: 44px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; }
+        .hud-btn.active { background: #007bff; border-color: #0056b3; }
+        #install-btn { display: none; background: #FFBF00; color: #0b0b0b; border-color: #FFBF00; }
         .leaflet-bar a { width: 44px !important; height: 44px !important; line-height: 44px !important; font-size: 22px !important; }
-        .gps-toggle.active { background: #007bff; border-color: #0056b3; }
         .leaflet-control-layers { background: #222 !important; color: #eee !important; border: 2px solid #444 !important; border-radius: 8px !important; }
         .copy-btn { margin-top: 8px; width: 100%; background: #222; color: #FFBF00; border: 1px solid #FFBF00; padding: 6px; border-radius: 4px; cursor: pointer; font-family: monospace; font-weight: bold; }
         .note-stash { width: 100%; box-sizing: border-box; background: #111; color: #0f0; border: 1px solid #444; margin-top: 8px; height: 60px; font-family: monospace; resize: none; padding: 4px; border-radius: 4px; }
@@ -29,13 +31,17 @@
 <body>
     <div id="loading">Scanning Sector...</div>
     <div id="map"></div>
-    <button id="gps-toggle" class="gps-toggle">Follow GPS</button>
+    
+    <div class="hud-controls">
+        <button id="install-btn" class="hud-btn">✨ Install PWA</button>
+        <button id="export-btn" class="hud-btn" onclick="exportStash()">🌿 Export Intel</button>
+        <button id="gps-toggle" class="hud-btn">📍 Follow GPS</button>
+    </div>
 
     <script>
         const darkMap = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '© OpenStreetMap © CARTO', subdomains: 'abcd', maxZoom: 20 });
         const satelliteMap = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: '© Esri', maxZoom: 20 });
 
-        // Pulled back zoom to view the entire city initially
         const map = L.map('map', { zoomControl: false, attributionControl: false, layers: [darkMap] }).setView([29.95, -90.07], 12);
         L.control.zoom({ position: 'topright' }).addTo(map);
 
@@ -47,10 +53,27 @@
 
         const API_ENDPOINT = 'https://data.nola.gov/resource/gjzc-adg8.json';
         const loadedCases = new Set();
-        let heatPoints = [];
+        let targetCoords = [];
 
         function getNote(addr) { try { return atob(localStorage.getItem('nwc_note_' + addr) || ''); } catch { return ''; } }
         window.saveNote = function(addr, val) { localStorage.setItem('nwc_note_' + addr, btoa(val)); };
+
+        window.exportStash = function() {
+            let dump = "TACTICAL STASH EXPORT\\n=====================\\n\\n";
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key.startsWith('nwc_note_')) {
+                    const addr = key.replace('nwc_note_', '').replace(/\\'/g, "'");
+                    const note = getNote(addr);
+                    if (note.trim().length > 0) dump += `🎯 TARGET: ${addr}\\n📝 INTEL: ${note}\\n---------------------\\n`;
+                }
+            }
+            const blob = new Blob([dump], { type: "text/plain" });
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = `nwc_intel_${new Date().toISOString().split('T')[0]}.txt`;
+            a.click();
+        };
 
         function parseSocrataDate(dateStr) {
             if (!dateStr || typeof dateStr !== 'string') return new Date();
@@ -61,15 +84,12 @@
 
         async function fetchSectorData() {
             const loadingUI = document.getElementById('loading');
-            loadingUI.style.display = 'block';
-            loadingUI.innerText = 'Scanning Sector...';
-            loadingUI.style.color = '#FFBF00';
+            loadingUI.style.display = 'block'; loadingUI.innerText = 'Scanning Sector...'; loadingUI.style.color = '#FFBF00';
 
             const bounds = map.getBounds();
             const n = bounds.getNorth(); const s = bounds.getSouth();
             const e = bounds.getEast(); const w = bounds.getWest();
 
-            // Removed the strict 'prevhearingresult' backend filter. Expanded limit to 50,000.
             const SOQL_QUERY = encodeURI(`?$select=geoaddress AS address, prevhearingresult AS status, casefiled AS notice_date, the_geom AS location, caseno AS casenumber&$where=within_box(the_geom, ${n}, ${w}, ${s}, ${e})&$limit=50000`);
 
             try {
@@ -77,7 +97,9 @@
                 const data = await response.json();
                 loadingUI.style.display = 'none';
                 
+                let heatPoints = [];
                 let newPins = false;
+                
                 data.forEach(prop => {
                     if (!prop.location || !prop.location.coordinates || !prop.casenumber) return;
                     if (loadedCases.has(prop.casenumber)) return;
@@ -88,12 +110,10 @@
                     const lat = prop.location.coordinates[1];
                     const lng = prop.location.coordinates[0];
                     heatPoints.push([lat, lng]);
+                    targetCoords.push(L.latLng(lat, lng));
 
-                    // Smarter frontend sorting: defaults to 'Uncommitted', marks as 'Guilty' if the word exists anywhere.
                     let status = 'Uncommitted';
-                    if (prop.status && prop.status.toLowerCase().includes('guilty')) {
-                        status = 'Guilty';
-                    }
+                    if (prop.status && prop.status.toLowerCase().includes('guilty')) status = 'Guilty';
 
                     const noticeDate = parseSocrataDate(prop.notice_date);
                     const deadlineDate = new Date(noticeDate); deadlineDate.setDate(deadlineDate.getDate() + 30);
@@ -101,10 +121,9 @@
                     addMarker(lat, lng, { address: prop.address || 'Unknown', status: status, noticeDate: noticeDate.toLocaleDateString(), deadline: deadlineDate.toLocaleDateString() });
                 });
                 
-                if (newPins) heatLayer.setLatLngs(heatPoints);
+                if (newPins) heatLayer.setLatLngs(heatLayer.getLatLngs().concat(heatPoints));
             } catch (error) {
-                loadingUI.innerText = 'Signal Lost.';
-                loadingUI.style.color = '#ff0000';
+                loadingUI.innerText = 'Signal Lost.'; loadingUI.style.color = '#ff0000';
             }
         }
 
@@ -135,6 +154,8 @@
         };
 
         const gpsToggle = document.getElementById('gps-toggle'); let watchId = null; let userMarker = null; let followUser = true;
+        let lastVibe = 0;
+
         map.on('dragstart', () => { if (watchId !== null) followUser = false; });
         gpsToggle.addEventListener('click', () => {
             if (watchId === null) {
@@ -142,8 +163,20 @@
                     gpsToggle.classList.add('active'); followUser = true;
                     watchId = navigator.geolocation.watchPosition((pos) => {
                         const { latitude, longitude } = pos.coords;
-                        if (userMarker) { userMarker.setLatLng([latitude, longitude]); } else { userMarker = L.circleMarker([latitude, longitude], { radius: 10, fillColor: '#007bff', color: '#fff', weight: 2, opacity: 1, fillOpacity: 0.9 }).addTo(map); }
-                        if (followUser) { map.setView([latitude, longitude]); }
+                        const userLoc = L.latLng(latitude, longitude);
+                        
+                        if (userMarker) { userMarker.setLatLng(userLoc); } else { userMarker = L.circleMarker(userLoc, { radius: 10, fillColor: '#007bff', color: '#fff', weight: 2, opacity: 1, fillOpacity: 0.9 }).addTo(map); }
+                        if (followUser) { map.setView(userLoc); }
+
+                        if (Date.now() - lastVibe > 30000) { 
+                            for (let pt of targetCoords) {
+                                if (userLoc.distanceTo(pt) < 15.24) { 
+                                    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+                                    lastVibe = Date.now();
+                                    break;
+                                }
+                            }
+                        }
                     }, (err) => { stopGps(); }, { enableHighAccuracy: true });
                 }
             } else { stopGps(); }
@@ -152,6 +185,22 @@
         
         map.on('moveend', fetchSectorData);
         map.whenReady(fetchSectorData);
+
+        let deferredPrompt;
+        const installBtn = document.getElementById('install-btn');
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            installBtn.style.display = 'block';
+        });
+        installBtn.addEventListener('click', async () => {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                if (outcome === 'accepted') installBtn.style.display = 'none';
+                deferredPrompt = null;
+            }
+        });
 
         if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js'); }); }
     </script>
