@@ -93,15 +93,22 @@
 
         function parseSocrataDate(dateStr) {
             if (!dateStr || typeof dateStr !== 'string') return new Date();
-            if (dateStr.length >= 8 && !dateStr.includes('-') && !dateStr.includes(':')) {
+            
+            // Handle ISO strings (e.g., "2023-10-25T00:00:00.000") by splitting out the time
+            if (dateStr.includes('T')) {
+                const dateParts = dateStr.split('T')[0].split('-');
+                return new Date(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1, parseInt(dateParts[2]));
+            }
+            
+            // Handle compact format (YYYYMMDD)
+            if (dateStr.length >= 8 && !dateStr.includes('-')) {
                 const y = parseInt(dateStr.substring(0, 4));
                 const m = parseInt(dateStr.substring(4, 6)) - 1;
                 const d = parseInt(dateStr.substring(6, 8));
-                const hh = parseInt(dateStr.substring(8, 10)) || 0;
-                const mm = parseInt(dateStr.substring(10, 12)) || 0;
-                const ss = parseInt(dateStr.substring(12, 14)) || 0;
-                return new Date(y, m, d, hh, mm, ss);
+                return new Date(y, m, d);
             }
+            
+            // Fallback
             const d = new Date(dateStr);
             return isNaN(d.getTime()) ? new Date() : d;
         }
