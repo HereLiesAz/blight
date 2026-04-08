@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nwc-v1.1';
+const CACHE_NAME = 'nwc-v1.2';
 const ASSETS = [
     './',
     './index.html',
@@ -35,7 +35,8 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
     const url = event.request.url;
 
-    if (url.includes('cartocdn.com') || url.includes('githubusercontent.com') || url.includes('iconify.design')) {
+    // Trap Carto tiles, Esri Satellite tiles, and manifest icons for offline use
+    if (url.includes('cartocdn.com') || url.includes('arcgisonline.com') || url.includes('githubusercontent.com') || url.includes('iconify.design')) {
         event.respondWith(
             caches.match(event.request).then(res => 
                 res || fetch(event.request).then(netRes => 
