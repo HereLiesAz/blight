@@ -6,203 +6,171 @@
     <title>Ninth Ward Canvas - Tactical Mapping Tool</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#0b0b0b">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; background-color: #0b0b0b; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; }
+        body, html { margin: 0; padding: 0; height: 100%; background-color: #0b0b0b; font-family: -apple-system, sans-serif; overflow: hidden; }
         #map { width: 100%; height: 100vh; }
         #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #FFBF00; font-family: monospace; font-size: 16px; z-index: 2000; background: rgba(11,11,11,0.9); padding: 12px 24px; border: 1px solid #FFBF00; border-radius: 4px; text-transform: uppercase; pointer-events: none; display: none; }
-        .popup-content { font-size: 14px; color: #333; min-width: 200px; }
+        .popup-content { font-size: 14px; color: #333; min-width: 220px; }
         .popup-content h3 { margin: 0 0 8px 0; font-size: 16px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
         .popup-content p { margin: 4px 0; }
-        .hud-controls { position: absolute; bottom: 20px; right: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 10px; }
-        .hud-btn { background: #222; color: #eee; border: 2px solid #444; border-radius: 8px; padding: 10px 15px; cursor: pointer; min-width: 44px; min-height: 44px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; }
+        .hud-controls { position: absolute; bottom: 20px; right: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; }
+        .hud-btn { background: #222; color: #eee; border: 2px solid #444; border-radius: 8px; padding: 10px 15px; cursor: pointer; min-width: 44px; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.5); display: flex; justify-content: center; }
         .hud-btn.active { background: #007bff; border-color: #0056b3; }
         #install-btn { display: none; background: #FFBF00; color: #0b0b0b; border-color: #FFBF00; }
+        #ghost-btn { background: #900; color: #fff; border-color: #f00; }
+        #sync-status { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: #222; color: #0f0; padding: 5px 15px; border-radius: 20px; border: 1px solid #0f0; font-family: monospace; font-size: 12px; z-index: 1000; display: none; }
         .leaflet-bar a { width: 44px !important; height: 44px !important; line-height: 44px !important; font-size: 22px !important; }
         .leaflet-control-layers { background: #222 !important; color: #eee !important; border: 2px solid #444 !important; border-radius: 8px !important; }
         .copy-btn { margin-top: 8px; width: 100%; background: #222; color: #FFBF00; border: 1px solid #FFBF00; padding: 6px; border-radius: 4px; cursor: pointer; font-family: monospace; font-weight: bold; }
-        .note-stash { width: 100%; box-sizing: border-box; background: #111; color: #0f0; border: 1px solid #444; margin-top: 8px; height: 60px; font-family: monospace; resize: none; padding: 4px; border-radius: 4px; }
+        .note-stash { width: 100%; box-sizing: border-box; background: #111; color: #0f0; border: 1px solid #444; margin-top: 8px; height: 50px; font-family: monospace; resize: none; padding: 4px; border-radius: 4px; }
         .route-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 8px; }
-        .route-btn { background: #333; color: #fff; border: 1px solid #555; padding: 6px; border-radius: 4px; cursor: pointer; font-weight: bold; text-align: center; text-decoration: none; display: block; font-size: 12px;}
+        .route-btn { background: #333; color: #fff; border: 1px solid #555; padding: 6px; border-radius: 4px; cursor: pointer; font-weight: bold; text-align: center; font-size: 12px; }
+        .img-preview { max-width: 100%; border-radius: 4px; margin-top: 5px; display: none; }
     </style>
 </head>
 <body>
     <div id="loading">Scanning Sector...</div>
+    <div id="sync-status">📡 ONLINE</div>
     <div id="map"></div>
     
     <div class="hud-controls">
         <button id="install-btn" class="hud-btn">✨ Install PWA</button>
-        <button id="export-btn" class="hud-btn" onclick="exportStash()">🌿 Export Intel</button>
-        <button id="gps-toggle" class="hud-btn">📍 Follow GPS</button>
+        <button id="export-btn" class="hud-btn" onclick="exportStash()">🌿 Dump Intel</button>
+        <button id="gps-toggle" class="hud-btn">📍 Track GPS</button>
+        <button id="ghost-btn" class="hud-btn" onclick="ghostProtocol()">⚠️ GHOST</button>
     </div>
 
     <script>
-        const darkMap = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '© OpenStreetMap © CARTO', subdomains: 'abcd', maxZoom: 20 });
-        const satelliteMap = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: '© Esri', maxZoom: 20 });
-
-        const map = L.map('map', { zoomControl: false, attributionControl: false, layers: [darkMap] }).setView([29.95, -90.07], 12);
+        const darkMap = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 20 });
+        const satelliteMap = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20 });
+        const map = L.map('map', { zoomControl: false, layers: [darkMap] }).setView([29.95, -90.07], 12);
         L.control.zoom({ position: 'topright' }).addTo(map);
 
         const guiltyLayer = L.layerGroup().addTo(map);
         const uncommittedLayer = L.layerGroup().addTo(map);
         const heatLayer = L.heatLayer([], { radius: 25, blur: 15, maxZoom: 17 }).addTo(map);
+        L.control.layers({ "Tactical Dark": darkMap, "Satellite": satelliteMap }, { "<span style='color: #ff0000;'>Guilty</span>": guiltyLayer, "<span style='color: #FFBF00;'>Uncommitted</span>": uncommittedLayer, "🔥 Heatmap": heatLayer }, { position: 'topright', collapsed: false }).addTo(map);
 
-        L.control.layers({ "Tactical Dark": darkMap, "Satellite Intel": satelliteMap }, { "<span style='color: #ff0000;'>Guilty Properties</span>": guiltyLayer, "<span style='color: #FFBF00;'>Uncommitted</span>": uncommittedLayer, "🔥 Density Map": heatLayer }, { position: 'topright', collapsed: false }).addTo(map);
+        let syncQueue = new Set();
+        const syncUI = document.getElementById('sync-status');
+        
+        window.addEventListener('online', () => { syncUI.innerText = '📡 FLUSHING QUEUE'; syncUI.style.color = '#0f0'; syncUI.style.borderColor = '#0f0'; setTimeout(() => { syncQueue.clear(); syncUI.style.display = 'none'; }, 2000); });
+        window.addEventListener('offline', () => { syncUI.innerText = '🚫 OFFLINE QUEUE'; syncUI.style.color = '#f00'; syncUI.style.borderColor = '#f00'; syncUI.style.display = 'block'; });
 
-        const API_ENDPOINT = 'https://data.nola.gov/resource/gjzc-adg8.json';
-        const loadedCases = new Set();
-        let targetCoords = [];
+        function getNote(addr) { try { return atob(localStorage.getItem('txt_' + addr) || ''); } catch { return ''; } }
+        function getImg(addr) { return localStorage.getItem('img_' + addr) || ''; }
+        
+        window.saveNote = function(addr, val) { 
+            localStorage.setItem('txt_' + addr, btoa(val)); 
+            if(!navigator.onLine) syncQueue.add(addr); 
+        };
 
-        function getNote(addr) { try { return atob(localStorage.getItem('nwc_note_' + addr) || ''); } catch { return ''; } }
-        window.saveNote = function(addr, val) { localStorage.setItem('nwc_note_' + addr, btoa(val)); };
+        window.ghostProtocol = function() {
+            localStorage.clear();
+            stopGps();
+            document.body.style.filter = 'contrast(2) brightness(0)';
+            setTimeout(() => location.reload(), 800);
+        };
 
         window.exportStash = function() {
             let dump = "TACTICAL STASH EXPORT\\n=====================\\n\\n";
             for (let i = 0; i < localStorage.length; i++) {
                 const key = localStorage.key(i);
-                if (key.startsWith('nwc_note_')) {
-                    const addr = key.replace('nwc_note_', '').replace(/\\'/g, "'");
-                    const note = getNote(addr);
-                    if (note.trim().length > 0) dump += `🎯 TARGET: ${addr}\\n📝 INTEL: ${note}\\n---------------------\\n`;
+                if (key.startsWith('txt_')) {
+                    const addr = key.replace('txt_', '');
+                    dump += `🎯 ${addr}\\n📝 ${getNote(addr)}\\n[Image Data: ${getImg(addr) ? 'YES' : 'NO'}]\\n---\\n`;
                 }
             }
-            const blob = new Blob([dump], { type: "text/plain" });
             const a = document.createElement("a");
-            a.href = URL.createObjectURL(blob);
-            a.download = `nwc_intel_${new Date().toISOString().split('T')[0]}.txt`;
+            a.href = URL.createObjectURL(new Blob([dump], { type: "text/plain" }));
+            a.download = `nwc_intel.txt`;
             a.click();
         };
 
-        function parseSocrataDate(dateStr) {
-            if (!dateStr || typeof dateStr !== 'string') return new Date();
-            if (dateStr.includes('T')) { const p = dateStr.split('T')[0].split('-'); return new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2])); }
-            if (dateStr.length >= 8 && !dateStr.includes('-')) { return new Date(parseInt(dateStr.substring(0, 4)), parseInt(dateStr.substring(4, 6)) - 1, parseInt(dateStr.substring(6, 8))); }
-            const d = new Date(dateStr); return isNaN(d.getTime()) ? new Date() : d;
-        }
+        window.captureOptics = function(event, addr, imgId) {
+            const file = event.target.files[0];
+            if(!file) return;
+            const reader = new FileReader();
+            reader.onload = e => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    const scale = 300 / img.width;
+                    canvas.width = 300; canvas.height = img.height * scale;
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    const b64 = canvas.toDataURL('image/jpeg', 0.5);
+                    localStorage.setItem('img_' + addr, b64);
+                    const el = document.getElementById(imgId);
+                    el.src = b64; el.style.display = 'block';
+                    if(!navigator.onLine) syncQueue.add(addr);
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        };
 
         async function fetchSectorData() {
-            const loadingUI = document.getElementById('loading');
-            loadingUI.style.display = 'block'; loadingUI.innerText = 'Scanning Sector...'; loadingUI.style.color = '#FFBF00';
-
-            const bounds = map.getBounds();
-            const n = bounds.getNorth(); const s = bounds.getSouth();
-            const e = bounds.getEast(); const w = bounds.getWest();
-
-            const SOQL_QUERY = encodeURI(`?$select=geoaddress AS address, prevhearingresult AS status, casefiled AS notice_date, the_geom AS location, caseno AS casenumber&$where=within_box(the_geom, ${n}, ${w}, ${s}, ${e})&$limit=50000`);
-
+            const SOQL_QUERY = encodeURI(`?$select=geoaddress AS address, prevhearingresult AS status, casefiled AS notice_date, the_geom AS location, caseno AS casenumber&$where=within_box(the_geom, ${map.getBounds().getNorth()}, ${map.getBounds().getWest()}, ${map.getBounds().getSouth()}, ${map.getBounds().getEast()})&$limit=50000`);
             try {
-                const response = await fetch(API_ENDPOINT + SOQL_QUERY);
+                const response = await fetch('https://data.nola.gov/resource/gjzc-adg8.json' + SOQL_QUERY);
                 const data = await response.json();
-                loadingUI.style.display = 'none';
-                
                 let heatPoints = [];
-                let newPins = false;
-                
                 data.forEach(prop => {
-                    if (!prop.location || !prop.location.coordinates || !prop.casenumber) return;
-                    if (loadedCases.has(prop.casenumber)) return;
-                    
-                    loadedCases.add(prop.casenumber);
-                    newPins = true;
-
-                    const lat = prop.location.coordinates[1];
-                    const lng = prop.location.coordinates[0];
+                    if (!prop.location) return;
+                    const lat = prop.location.coordinates[1]; const lng = prop.location.coordinates[0];
                     heatPoints.push([lat, lng]);
-                    targetCoords.push(L.latLng(lat, lng));
-
-                    let status = 'Uncommitted';
-                    if (prop.status && prop.status.toLowerCase().includes('guilty')) status = 'Guilty';
-
-                    const noticeDate = parseSocrataDate(prop.notice_date);
-                    const deadlineDate = new Date(noticeDate); deadlineDate.setDate(deadlineDate.getDate() + 30);
-
-                    addMarker(lat, lng, { address: prop.address || 'Unknown', status: status, noticeDate: noticeDate.toLocaleDateString(), deadline: deadlineDate.toLocaleDateString() });
+                    let status = (prop.status && prop.status.toLowerCase().includes('guilty')) ? 'Guilty' : 'Uncommitted';
+                    addMarker(lat, lng, { address: prop.address || 'Unknown', status: status });
                 });
-                
-                if (newPins) heatLayer.setLatLngs(heatLayer.getLatLngs().concat(heatPoints));
-            } catch (error) {
-                loadingUI.innerText = 'Signal Lost.'; loadingUI.style.color = '#ff0000';
-            }
+                heatLayer.setLatLngs(heatLayer.getLatLngs().concat(heatPoints));
+            } catch (error) { console.error("Signal Lost"); }
         }
 
         function addMarker(lat, lng, property) {
             const isGuilty = property.status === 'Guilty';
-            const marker = L.circleMarker([lat, lng], { radius: 8, fillColor: isGuilty ? '#ff0000' : '#FFBF00', color: '#fff', weight: 1, opacity: 1, fillOpacity: 0.8 });
-            if (isGuilty) { guiltyLayer.addLayer(marker); } else { uncommittedLayer.addLayer(marker); }
+            const marker = L.circleMarker([lat, lng], { radius: 8, fillColor: isGuilty ? '#ff0000' : '#FFBF00', color: '#fff', weight: 1, fillOpacity: 0.8 });
+            if (isGuilty) guiltyLayer.addLayer(marker); else uncommittedLayer.addLayer(marker);
 
-            const safeAddress = property.address.replace(/'/g, "\\'");
+            const safeAddr = property.address.replace(/'/g, "\\'");
+            const imgData = getImg(safeAddr);
+            
             marker.bindPopup(`
 <div class="popup-content">
   <h3>${property.address}</h3>
-  <p><b>Status:</b> ${property.status} | <b>Deadline:</b> ${property.deadline}</p>
-  <textarea class="note-stash" placeholder="Local stash..." onchange="saveNote('${safeAddress}', this.value)">${getNote(property.address)}</textarea>
-  <button class="copy-btn" onclick="copyIntel(this, '${safeAddress}', '${property.status}', '${property.noticeDate}', '${property.deadline}')">Copy Intel</button>
+  <p><b>Status:</b> ${property.status}</p>
+  <img id="img_${safeAddr}" class="img-preview" src="${imgData}" style="display:${imgData ? 'block' : 'none'};">
+  <textarea class="note-stash" placeholder="Intel stash..." onchange="saveNote('${safeAddr}', this.value)">${getNote(safeAddr)}</textarea>
   <div class="route-grid">
+    <input type="file" accept="image/*" capture="environment" id="cam_${safeAddr}" style="display:none;" onchange="captureOptics(event, '${safeAddr}', 'img_${safeAddr}')">
+    <button class="route-btn" onclick="document.getElementById('cam_${safeAddr}').click()">📸 Optics</button>
     <button class="route-btn" onclick="window.open('https://maps.apple.com/?daddr=${lat},${lng}&dirflg=d')">🍎 Route</button>
-    <button class="route-btn" onclick="window.open('https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}')">🗺️ Route</button>
   </div>
 </div>`.trim());
         }
 
-        window.copyIntel = function(btn, address, status, notice, deadline) {
-            navigator.clipboard.writeText(`🎯 ${address}\\n⚠️ ${status}\\n📅 ${notice}\\n⏳ ${deadline}`).then(() => {
-                const orig = btn.innerText; btn.innerText = 'COPIED!'; btn.style.background = '#FFBF00'; btn.style.color = '#0b0b0b';
-                setTimeout(() => { btn.innerText = orig; btn.style.background = '#222'; btn.style.color = '#FFBF00'; }, 2000);
-            });
-        };
-
-        const gpsToggle = document.getElementById('gps-toggle'); let watchId = null; let userMarker = null; let followUser = true;
-        let lastVibe = 0;
-
-        map.on('dragstart', () => { if (watchId !== null) followUser = false; });
+        const gpsToggle = document.getElementById('gps-toggle'); let watchId = null; let userMarker = null;
         gpsToggle.addEventListener('click', () => {
             if (watchId === null) {
-                if ("geolocation" in navigator) {
-                    gpsToggle.classList.add('active'); followUser = true;
-                    watchId = navigator.geolocation.watchPosition((pos) => {
-                        const { latitude, longitude } = pos.coords;
-                        const userLoc = L.latLng(latitude, longitude);
-                        
-                        if (userMarker) { userMarker.setLatLng(userLoc); } else { userMarker = L.circleMarker(userLoc, { radius: 10, fillColor: '#007bff', color: '#fff', weight: 2, opacity: 1, fillOpacity: 0.9 }).addTo(map); }
-                        if (followUser) { map.setView(userLoc); }
-
-                        if (Date.now() - lastVibe > 30000) { 
-                            for (let pt of targetCoords) {
-                                if (userLoc.distanceTo(pt) < 15.24) { 
-                                    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-                                    lastVibe = Date.now();
-                                    break;
-                                }
-                            }
-                        }
-                    }, (err) => { stopGps(); }, { enableHighAccuracy: true });
-                }
-            } else { stopGps(); }
+                gpsToggle.classList.add('active');
+                watchId = navigator.geolocation.watchPosition((pos) => {
+                    const loc = L.latLng(pos.coords.latitude, pos.coords.longitude);
+                    if (userMarker) userMarker.setLatLng(loc); else userMarker = L.circleMarker(loc, { radius: 10, fillColor: '#007bff', color: '#fff', weight: 2, fillOpacity: 0.9 }).addTo(map);
+                    map.setView(loc);
+                }, () => stopGps(), { enableHighAccuracy: true });
+            } else stopGps();
         });
-        function stopGps() { if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; } gpsToggle.classList.remove('active'); if (userMarker) { map.removeLayer(userMarker); userMarker = null; } }
+        function stopGps() { if (watchId !== null) navigator.geolocation.clearWatch(watchId); watchId = null; gpsToggle.classList.remove('active'); if (userMarker) { map.removeLayer(userMarker); userMarker = null; } }
         
-        map.on('moveend', fetchSectorData);
-        map.whenReady(fetchSectorData);
+        map.on('moveend', fetchSectorData); map.whenReady(fetchSectorData);
 
-        let deferredPrompt;
-        const installBtn = document.getElementById('install-btn');
-        window.addEventListener('beforeinstallprompt', (e) => {
-            e.preventDefault();
-            deferredPrompt = e;
-            installBtn.style.display = 'block';
-        });
-        installBtn.addEventListener('click', async () => {
-            if (deferredPrompt) {
-                deferredPrompt.prompt();
-                const { outcome } = await deferredPrompt.userChoice;
-                if (outcome === 'accepted') installBtn.style.display = 'none';
-                deferredPrompt = null;
-            }
-        });
-
-        if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js'); }); }
+        let dPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); dPrompt = e; document.getElementById('install-btn').style.display = 'block'; });
+        document.getElementById('install-btn').addEventListener('click', async () => { if (dPrompt) { dPrompt.prompt(); await dPrompt.userChoice; document.getElementById('install-btn').style.display = 'none'; dPrompt = null; } });
+        if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
     </script>
 </body>
 </html>
