@@ -21,6 +21,23 @@
             width: 100%;
             height: 100vh;
         }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #FFBF00;
+            font-family: monospace;
+            font-size: 16px;
+            z-index: 2000;
+            background: rgba(11,11,11,0.9);
+            padding: 12px 24px;
+            border: 1px solid #FFBF00;
+            border-radius: 4px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            pointer-events: none;
+        }
         .popup-content {
             font-size: 14px;
             color: #333;
@@ -63,27 +80,68 @@
             background: #007bff;
             border-color: #0056b3;
         }
+        .leaflet-control-layers {
+            background: #222 !important;
+            color: #eee !important;
+            border: 2px solid #444 !important;
+            border-radius: 8px !important;
+        }
+        .copy-btn {
+            margin-top: 10px;
+            width: 100%;
+            background: #222;
+            color: #FFBF00;
+            border: 1px solid #FFBF00;
+            padding: 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: monospace;
+            text-transform: uppercase;
+            font-weight: bold;
+            transition: all 0.2s ease;
+        }
+        .copy-btn:active {
+            background: #FFBF00;
+            color: #0b0b0b;
+        }
     </style>
 </head>
 <body>
+    <div id="loading">Intercepting Data...</div>
     <div id="map"></div>
     <button id="gps-toggle" class="gps-toggle">Follow GPS</button>
 
     <script>
-        const map = L.map('map', {
-            zoomControl: false,
-            attributionControl: false
-        }).setView([29.965, -90.007], 15);
-
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        const darkMap = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap &copy; CARTO',
             subdomains: 'abcd',
             maxZoom: 20
-        }).addTo(map);
+        });
 
-        L.control.zoom({
-            position: 'topright'
-        }).addTo(map);
+        const satelliteMap = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: '&copy; Esri',
+            maxZoom: 20
+        });
+
+        const map = L.map('map', {
+            zoomControl: false,
+            attributionControl: false,
+            layers: [darkMap] 
+        }).setView([29.965, -90.007], 15);
+
+        L.control.zoom({ position: 'topright' }).addTo(map);
+
+        // Tactical Overlay Groups
+        const guiltyLayer = L.layerGroup().addTo(map);
+        const uncommittedLayer = L.layerGroup().addTo(map);
+
+        L.control.layers({
+            "Tactical Dark": darkMap,
+            "Satellite Intel": satelliteMap
+        }, {
+            "<span style='color: #ff0000;'>Guilty Properties</span>": guiltyLayer,
+            "<span style='color: #FFBF00;'>Uncommitted Properties</span>": uncommittedLayer
+        }, { position: 'topright', collapsed: false }).addTo(map);
 
         const API_ENDPOINT = 'https://data.nola.gov/resource/gjzc-adg8.json';
         const SOQL_QUERY = encodeURI(
@@ -93,22 +151,16 @@
 
         function parseSocrataDate(dateStr) {
             if (!dateStr || typeof dateStr !== 'string') return new Date();
-            
-            // Handle ISO strings (e.g., "2023-10-25T00:00:00.000") by splitting out the time
             if (dateStr.includes('T')) {
                 const dateParts = dateStr.split('T')[0].split('-');
                 return new Date(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1, parseInt(dateParts[2]));
             }
-            
-            // Handle compact format (YYYYMMDD)
             if (dateStr.length >= 8 && !dateStr.includes('-')) {
                 const y = parseInt(dateStr.substring(0, 4));
                 const m = parseInt(dateStr.substring(4, 6)) - 1;
                 const d = parseInt(dateStr.substring(6, 8));
                 return new Date(y, m, d);
             }
-            
-            // Fallback
             const d = new Date(dateStr);
             return isNaN(d.getTime()) ? new Date() : d;
         }
@@ -120,10 +172,15 @@
                 processProperties(data);
             } catch (error) {
                 console.error('Error fetching data:', error);
+                document.getElementById('loading').innerText = 'Data intercept failed.';
+                document.getElementById('loading').style.color = '#ff0000';
+                document.getElementById('loading').style.borderColor = '#ff0000';
             }
         }
 
         function processProperties(data) {
+            document.getElementById('loading').style.display = 'none';
+
             data.forEach(prop => {
                 if (!prop.location || !prop.location.coordinates) return;
 
@@ -152,7 +209,8 @@
         }
 
         function addMarker(lat, lng, property) {
-            const color = property.status === 'Guilty' ? '#ff0000' : '#FFBF00';
+            const isGuilty = property.status === 'Guilty';
+            const color = isGuilty ? '#ff0000' : '#FFBF00';
 
             const marker = L.circleMarker([lat, lng], {
                 radius: 8,
@@ -161,7 +219,15 @@
                 weight: 1,
                 opacity: 1,
                 fillOpacity: 0.8
-            }).addTo(map);
+            });
+
+            if (isGuilty) {
+                guiltyLayer.addLayer(marker);
+            } else {
+                uncommittedLayer.addLayer(marker);
+            }
+
+            const safeAddress = property.address.replace(/'/g, "\\'");
 
             const popupContent = `
 <div class="popup-content">
@@ -169,11 +235,30 @@
   <p><b>Status:</b> ${property.status}</p>
   <p><b>Notice Date:</b> ${property.noticeDate}</p>
   <p><b>30-Day Deadline:</b> ${property.deadline}</p>
+  <button class="copy-btn" onclick="copyIntel(this, '${safeAddress}', '${property.status}', '${property.noticeDate}', '${property.deadline}')">Copy Intel</button>
 </div>
             `.trim();
 
             marker.bindPopup(popupContent);
         }
+
+        window.copyIntel = function(btn, address, status, notice, deadline) {
+            const text = `🎯 TARGET: ${address}\\n⚠️ STATUS: ${status}\\n📅 NOTICE: ${notice}\\n⏳ DEADLINE: ${deadline}`;
+            
+            navigator.clipboard.writeText(text).then(() => {
+                const originalText = btn.innerText;
+                btn.innerText = 'COPIED!';
+                btn.style.background = '#FFBF00';
+                btn.style.color = '#0b0b0b';
+                setTimeout(() => {
+                    btn.innerText = originalText;
+                    btn.style.background = '#222';
+                    btn.style.color = '#FFBF00';
+                }, 2000);
+            }).catch(err => {
+                console.error('Failed to copy: ', err);
+            });
+        };
 
         const gpsToggle = document.getElementById('gps-toggle');
         let watchId = null;
