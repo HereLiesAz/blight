@@ -77,7 +77,7 @@
     </div>
 
     <script>
-        const PROXY_URL = 'PLACEHOLDER_PROXY_URL'; // Replace with your Google Apps Script Web App URL
+        const PROXY_URL = 'https://script.google.com/macros/s/AKfycbzGE8-cwmkF15TUPyHpkiOw-t0pnHeX8uSngXv2gqj-6KT87cAcsH03LhNNOVgJohLJ/exec'; // Replace with your Google Apps Script Web App URL
         const darkMap = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 20 });
         const satelliteMap = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20 });
         const map = L.map('map', { zoomControl: false, layers: [darkMap] }).setView([29.95, -90.07], 12);
