@@ -5,7 +5,7 @@ import os
 import json
 import sys
 import traceback
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # Constants
 SPREADSHEET_ID = '1O5zIhogpzmZLRn36X1Rt6cZUkWeYb2dzUgBTQszq_oE'
@@ -61,7 +61,7 @@ def main():
     ])
 
     seen_cases = set()
-    current_date = datetime.utcnow().strftime("%m/%d/%Y %H:%M:%S UTC")
+    current_date = datetime.now(timezone.utc).strftime("%m/%d/%Y %H:%M:%S UTC")
 
     for row in data:
         caseno = row.get("casenumber")
@@ -143,6 +143,9 @@ def main():
         sys.exit(1)
     except PermissionError as e:
         print("\n[CRITICAL ERROR] Google API Permission Error!")
+        print(f"Error Details: {e}")
+        if e.__cause__:
+            print(f"Underlying Cause: {e.__cause__}")
         print("This usually means the Google Sheets API is disabled in your Google Cloud Console.")
         print("ACTION REQUIRED: Follow the link provided in the error message above to enable the Google Sheets API for your project.")
         print("Wait a few minutes after enabling it, then try running the scraper again.\n")

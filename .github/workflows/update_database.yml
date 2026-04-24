@@ -26,5 +26,5 @@ jobs:
 
       - name: Run Database Updater
         env:
-          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          GOOGLE_CREDENTIALS: ${{ secrets.SHEETS_API }}
         run: python scripts/update_database.py
