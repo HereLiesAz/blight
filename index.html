@@ -269,9 +269,25 @@
 
         async function fetchSectorData() {
             if (PROXY_URL === 'PLACEHOLDER_PROXY_URL') {
-                console.warn("Please update PROXY_URL with your Google Apps Script Web App URL.");
+                console.warn("PROXY_URL not set. Falling back to live NOLA Socrata API.");
+                const SOQL_QUERY = encodeURI(`?$select=geoaddress AS address, prevhearingresult AS status, casefiled AS notice_date, the_geom AS location, caseno AS casenumber&$where=within_box(the_geom, ${map.getBounds().getNorth()}, ${map.getBounds().getWest()}, ${map.getBounds().getSouth()}, ${map.getBounds().getEast()})&$limit=50000`);
+                try {
+                    const response = await fetch('https://data.nola.gov/resource/gjzc-adg8.json' + SOQL_QUERY);
+                    const data = await response.json();
+
+                    data.forEach(prop => {
+                        if (!prop.location || masterData.some(m => m.caseno === prop.casenumber)) return;
+                        const lat = prop.location.coordinates[1]; const lng = prop.location.coordinates[0];
+                        let status = (prop.status && prop.status.toLowerCase().includes('guilty')) ? 'Guilty' : 'Uncommitted';
+                        const noticeDate = parseSocrataDate(prop.notice_date);
+
+                        masterData.push({ caseno: prop.casenumber, lat: lat, lng: lng, date: noticeDate, prop: { address: prop.address || 'Unknown', status: status, noticeDate: noticeDate.toLocaleDateString(), deadline: new Date(noticeDate.getTime() + 30*24*60*60*1000).toLocaleDateString() }});
+                    });
+                    filterTimeline();
+                } catch (error) { console.error("Signal Lost", error); }
                 return;
             }
+
             try {
                 const response = await fetch(PROXY_URL);
                 const data = await response.json();
@@ -290,9 +306,9 @@
                     const lng = parseFloat(row.lng);
 
                     if (!lat || !lng || masterData.some(m => m.caseno === caseno)) return;
-                    
-                    let status = (rawStatus && typeof rawStatus === 'string' && rawStatus.toLowerCase().includes('guilty')) ? 'Guilty' : 'Uncommitted';
 
+                    let status = (rawStatus && typeof rawStatus === 'string' && rawStatus.toLowerCase().includes('guilty')) ? 'Guilty' : 'Uncommitted';
+                    
                     let noticeDate = parseSocrataDate(noticeDateRaw);
 
                     masterData.push({

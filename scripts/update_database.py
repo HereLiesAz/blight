@@ -3,6 +3,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import os
 import json
+import sys
 import traceback
 from datetime import datetime, timedelta
 
@@ -114,14 +115,23 @@ def main():
         print("This usually means your Google Service Account does not have permission to view the spreadsheet.")
         print(f"ACTION REQUIRED: Open your Google Sheet and click 'Share'. Add the following email address as an Editor:")
         print(f"==> {creds_dict.get('client_email', 'UNKNOWN_EMAIL')} <==\n")
+        sys.exit(1)
+    except PermissionError as e:
+        print("\n[CRITICAL ERROR] Google API Permission Error!")
+        print("This usually means the Google Sheets API is disabled in your Google Cloud Console.")
+        print("ACTION REQUIRED: Follow the link provided in the error message above to enable the Google Sheets API for your project.")
+        print("Wait a few minutes after enabling it, then try running the scraper again.\n")
+        sys.exit(1)
     except gspread.exceptions.APIError as e:
         print("\n[CRITICAL ERROR] Google API Error!")
         print(f"Error Details: {e}")
         print("If this is a permission error (403), please ensure you have shared the Google Sheet with the Service Account email address:")
         print(f"==> {creds_dict.get('client_email', 'UNKNOWN_EMAIL')} <==\n")
+        sys.exit(1)
     except Exception as e:
         print("Failed to update Google Sheet:")
         traceback.print_exc()
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
