@@ -110,7 +110,6 @@
 
     <script>
         const PROXY_URL = 'PLACEHOLDER_PROXY_URL'; // Replace with your Google Apps Script Web App URL
-        const GITHUB_PAT = 'YOUR_GITHUB_PAT'; // Replace with your GitHub Personal Access Token to trigger workflows
         const darkMap = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 20 });
         const satelliteMap = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20 });
         const map = L.map('map', { zoomControl: false, layers: [darkMap] }).setView([29.95, -90.07], 12);
@@ -168,35 +167,41 @@
         };
 
         window.triggerScrape = async function() {
-            if (GITHUB_PAT === 'YOUR_GITHUB_PAT') {
-                alert("Please add your GITHUB_PAT to index.html to trigger scrapes.");
+            if (PROXY_URL === 'PLACEHOLDER_PROXY_URL') {
+                alert("Please add your PROXY_URL to index.html to trigger scrapes.");
                 return;
             }
             const statusUi = document.getElementById('scrape-status');
             statusUi.style.display = 'block';
             statusUi.innerText = '🔄 Triggering Update...';
             try {
-                const response = await fetch('https://api.github.com/repos/nhenia/blight/dispatches', {
+                const response = await fetch(PROXY_URL, {
                     method: 'POST',
                     headers: {
-                        'Accept': 'application/vnd.github.v3+json',
-                        'Authorization': `token ${GITHUB_PAT}`,
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'text/plain;charset=utf-8' // GAS accepts text/plain best for CORS POST
                     },
-                    body: JSON.stringify({ event_type: 'update-database' })
+                    body: JSON.stringify({ action: 'scrape' })
                 });
                 if (response.ok) {
-                    statusUi.innerText = '✅ Update Triggered! Check repo Actions.';
-                    statusUi.style.background = '#0f0';
+                    const resJson = await response.json();
+                    if(resJson.status === 'success') {
+                        statusUi.innerText = '✅ Update Complete!';
+                        statusUi.style.background = '#0f0';
+                        masterData = [];
+                        fetchSectorData(); // reload
+                    } else {
+                        statusUi.innerText = `❌ Error`;
+                        statusUi.style.background = '#f00';
+                        statusUi.style.color = '#fff';
+                        console.error(resJson.error);
+                    }
                 } else {
-                    const text = await response.text();
                     statusUi.innerText = `❌ Error: ${response.status}`;
                     statusUi.style.background = '#f00';
                     statusUi.style.color = '#fff';
-                    console.error(text);
                 }
             } catch (error) {
-                statusUi.innerText = '❌ Network Error';
+                statusUi.innerText = '❌ Network Error (CORS?)';
                 statusUi.style.background = '#f00';
                 statusUi.style.color = '#fff';
                 console.error(error);
