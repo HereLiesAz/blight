@@ -46,9 +46,22 @@ def main():
 
     processed_data = []
     # Add Headers
-    processed_data.append(["casenumber", "address", "status", "notice_date", "lat", "lng", "deadline"])
+    processed_data.append([
+        "Address",
+        "Neighborhood",
+        "Name/Type",
+        "Features & 2026 Status",
+        "Previous Statuses",
+        "Updated on",
+        "Case Number",
+        "Notice Date",
+        "Deadline",
+        "Latitude",
+        "Longitude"
+    ])
 
     seen_cases = set()
+    current_date = datetime.utcnow().strftime("%m/%d/%Y %H:%M:%S UTC")
 
     for row in data:
         caseno = row.get("casenumber")
@@ -80,7 +93,19 @@ def main():
             notice_date = ""
             deadline = ""
 
-        processed_data.append([caseno, address, status, notice_date, lat, lng, deadline])
+        processed_data.append([
+            address,                 # A: Address
+            "Lower Ninth Ward",      # B: Neighborhood
+            "",                      # C: Name/Type (blank for now)
+            status,                  # D: Features & 2026 Status (Status)
+            "",                      # E: Previous Statuses (blank for now)
+            current_date,            # F: Updated on
+            caseno,                  # G: Case Number
+            notice_date,             # H: Notice Date
+            deadline,                # I: Deadline
+            lat,                     # J: Latitude
+            lng                      # K: Longitude
+        ])
         seen_cases.add(caseno)
 
     print(f"Processed {len(processed_data)-1} valid records.")
@@ -102,8 +127,8 @@ def main():
         print(f"Opening spreadsheet {SPREADSHEET_ID}...")
         sheet = client.open_by_key(SPREADSHEET_ID).sheet1
 
-        print("Clearing existing data...")
-        sheet.clear()
+        print("Clearing existing data in columns A:K...")
+        sheet.batch_clear(["A:K"])
 
         print("Writing new data...")
         sheet.update(processed_data, "A1")

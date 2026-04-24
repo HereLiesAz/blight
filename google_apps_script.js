@@ -67,25 +67,27 @@ function doGet(e) {
     // Process headers
     const headers = data[0].map(h => h.toString().toLowerCase().trim());
 
-    // Find column indices dynamically
-    let colIndices = { casenumber: -1, address: -1, status: -1, notice_date: -1, lat: -1, lng: -1 };
+    // Find column indices dynamically based on the requested schema
+    let colIndices = { casenumber: -1, address: -1, status: -1, notice_date: -1, lat: -1, lng: -1, deadline: -1 };
 
     headers.forEach((label, index) => {
-        if (label.includes('casenumber') || label.includes('case number') || label === 'caseno') colIndices.casenumber = index;
+        if (label.includes('case number') || label.includes('casenumber')) colIndices.casenumber = index;
         else if (label.includes('address')) colIndices.address = index;
-        else if (label.includes('status') || label.includes('result')) colIndices.status = index;
-        else if (label.includes('notice') || label.includes('date')) colIndices.notice_date = index;
-        else if (label === 'lat' || label === 'latitude') colIndices.lat = index;
-        else if (label === 'lng' || label === 'longitude') colIndices.lng = index;
+        else if (label.includes('features') || label.includes('status')) colIndices.status = index;
+        else if (label.includes('notice date')) colIndices.notice_date = index;
+        else if (label.includes('deadline')) colIndices.deadline = index;
+        else if (label.includes('latitude') || label === 'lat') colIndices.lat = index;
+        else if (label.includes('longitude') || label === 'lng') colIndices.lng = index;
     });
 
-    // Fallback indices if headers are missing
-    if (colIndices.casenumber === -1) colIndices.casenumber = 0;
-    if (colIndices.address === -1) colIndices.address = 1;
-    if (colIndices.status === -1) colIndices.status = 2;
-    if (colIndices.notice_date === -1) colIndices.notice_date = 3;
-    if (colIndices.lat === -1) colIndices.lat = 4;
-    if (colIndices.lng === -1) colIndices.lng = 5;
+    // Fallback indices if headers are missing (matching the 11-column setup)
+    if (colIndices.address === -1) colIndices.address = 0;
+    if (colIndices.status === -1) colIndices.status = 3;
+    if (colIndices.casenumber === -1) colIndices.casenumber = 6;
+    if (colIndices.notice_date === -1) colIndices.notice_date = 7;
+    if (colIndices.deadline === -1) colIndices.deadline = 8;
+    if (colIndices.lat === -1) colIndices.lat = 9;
+    if (colIndices.lng === -1) colIndices.lng = 10;
 
     const result = [];
 
@@ -99,6 +101,7 @@ function doGet(e) {
         address: row[colIndices.address],
         status: row[colIndices.status],
         notice_date: row[colIndices.notice_date],
+        deadline: row[colIndices.deadline],
         lat: row[colIndices.lat],
         lng: row[colIndices.lng]
       });
