@@ -43,6 +43,9 @@
         .time-panel { position: absolute; bottom: 20px; left: 20px; z-index: 1000; background: rgba(17,17,17,0.9); padding: 10px; border: 1px solid #444; border-radius: 8px; width: 250px; }
         .time-panel input[type=range] { width: 100%; }
         .time-panel label { color: #FFBF00; font-family: monospace; font-size: 12px; display: block; margin-bottom: 5px; text-align: center;}
+
+        .list-item { padding: 12px; border-bottom: 1px solid #333; }
+        .list-item:last-child { border-bottom: none; }
     </style>
 </head>
 <body>
@@ -57,6 +60,14 @@
         <p>H:78° L:65°</p>
     </div>
 
+
+    <div id="blighted-modal" style="display:none; position:fixed; z-index:10000; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.8);">
+        <div style="background-color:#111; margin:15% auto; padding:20px; border:2px solid #ff0000; width:80%; color:#eee; border-radius:12px; position:relative;">
+            <span onclick="document.getElementById('blighted-modal').style.display='none'" style="position:absolute; right:15px; top:10px; font-size:28px; cursor:pointer;">&times;</span>
+            <h2 style="color:#ff0000; margin-top:0;">Blighted Properties in View</h2>
+            <div id="blighted-list-content" style="max-height:60vh; overflow-y:auto;"></div>
+        </div>
+    </div>
     <div id="qr-modal">
         <div id="qrcode"></div>
         <button id="qr-close" onclick="document.getElementById('qr-modal').style.display='none'">Close Link</button>
@@ -70,6 +81,7 @@
     </div>
 
     <div class="hud-controls">
+        <button id="blighted-list-btn" class="hud-btn" onclick="showBlightedList()">📋 LIST BLIGHTED</button>
         <button id="install-btn" class="hud-btn">✨ Install PWA</button>
         <button id="net-btn" class="hud-btn" onclick="generateQR()">🕸️ Beam Intel</button>
         <button id="gps-toggle" class="hud-btn">📍 Track GPS</button>
@@ -85,7 +97,7 @@
         const guiltyLayer = L.layerGroup().addTo(map);
         const uncommittedLayer = L.layerGroup().addTo(map);
         const heatLayer = L.heatLayer([], { radius: 25, blur: 15, maxZoom: 17 }).addTo(map);
-        L.control.layers({ "Tactical Dark": darkMap, "Satellite": satelliteMap }, { "<span style='color: #ff0000;'>Guilty</span>": guiltyLayer, "<span style='color: #FFBF00;'>Uncommitted</span>": uncommittedLayer, "🔥 Heatmap": heatLayer }, { position: 'topright', collapsed: false }).addTo(map);
+        L.control.layers({ "Tactical Dark": darkMap, "Satellite": satelliteMap }, { "<span style='color: #ff0000;'>Blighted</span>": guiltyLayer, "<span style='color: #FFBF00;'>Uncommitted</span>": uncommittedLayer, "🔥 Heatmap": heatLayer }, { position: 'topright', collapsed: false }).addTo(map);
 
         let masterData = [];
         let syncQueue = new Set();
@@ -204,7 +216,7 @@
   <div class="route-grid">
     <input type="file" accept="image/*" capture="environment" id="cam_${safeAddr}" style="display:none;" onchange="captureOptics(event, '${safeAddr}', 'img_${safeAddr}')">
     <button class="route-btn" onclick="document.getElementById('cam_${safeAddr}').click()">📸 Optics</button>
-    <button class="route-btn" onclick="window.open('https://maps.apple.com/?daddr=${lat},${lng}&dirflg=d')">🍎 Route</button>
+    <button class="route-btn" onclick="window.open('https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}')">🚗 Route</button>
   </div>
 </div>`.trim());
         }
@@ -225,6 +237,29 @@
         map.on('moveend', fetchSectorData); map.whenReady(fetchSectorData);
 
         let dPrompt;
+
+        window.showBlightedList = function() {
+            const bounds = map.getBounds();
+            const slider = document.getElementById('time-slider');
+            const monthsBack = 12 - parseInt(slider.value);
+            const cutoffDate = new Date();
+            cutoffDate.setMonth(cutoffDate.getMonth() - parseInt(slider.value));
+
+            const visibleBlighted = masterData.filter(item => {
+                const isGuilty = item.prop.status === 'Guilty';
+                const isVisible = bounds.contains([item.lat, item.lng]);
+                const isWithinTimeline = (monthsBack === 0 || item.date >= cutoffDate);
+                return isGuilty && isVisible && isWithinTimeline;
+            });
+
+            const listContainer = document.getElementById('blighted-list-content');
+            listContainer.innerHTML = visibleBlighted.length > 0
+                ? visibleBlighted.map(item => `<div class="list-item"><strong>${item.prop.address}</strong><br>Deadline: ${item.prop.deadline}</div>`).join('')
+                : '<p>No blighted properties in view.</p>';
+
+            document.getElementById('blighted-modal').style.display = 'block';
+        };
+
         window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); dPrompt = e; document.getElementById('install-btn').style.display = 'block'; });
         document.getElementById('install-btn').addEventListener('click', async () => { if (dPrompt) { dPrompt.prompt(); await dPrompt.userChoice; document.getElementById('install-btn').style.display = 'none'; dPrompt = null; } });
         if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
