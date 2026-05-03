@@ -79,7 +79,17 @@ def find_class_dirs(root):
     return {p.name: p for p in pathlib.Path(root).rglob('*') if p.is_dir() and not p.name.startswith('.') and any(c.suffix.lower() in {'.jpg', '.jpeg', '.png'} for c in p.iterdir() if c.is_file())}
 
 class_dirs = find_class_dirs(DATA_DIR)
-print("Classes:", {k: len(list(v.glob('*'))) for k, v in class_dirs.items()})
+# Detect train/val/test split layouts that would silently collide on basename.
+from collections import Counter
+all_dir_names = [p.name for p in pathlib.Path(DATA_DIR).rglob('*') if p.is_dir() and not p.name.startswith('.') and any(c.suffix.lower() in {'.jpg', '.jpeg', '.png'} for c in p.iterdir() if c.is_file())]
+dupes = {n: c for n, c in Counter(all_dir_names).items() if c > 1}
+if dupes:
+    print(f"WARNING: duplicate class-directory basenames detected: {dupes}")
+    print("This dataset likely uses a train/val/test split layout. Edit `find_class_dirs` to handle splits explicitly before continuing.")
+
+print("Classes (full paths):")
+for k, v in class_dirs.items():
+    print(f"  {k:30s} -> {v} ({len(list(v.glob('*')))} files)")
 
 # Sample grid
 fig, axes = plt.subplots(2, 4, figsize=(12, 6))
@@ -99,16 +109,10 @@ from PIL import Image
 # EDIT IF NEEDED — map directory name → class label (1 = graffiti, 0 = no graffiti)
 LABEL_MAP = {name: (1 if 'graffiti' in name.lower() and 'no' not in name.lower() else 0) for name in class_dirs}
 print("Label map:", LABEL_MAP)
+for name, lbl in LABEL_MAP.items():
+    sample = next(class_dirs[name].glob('*.*'), None)
+    print(f"  {name!r:30s} -> {lbl}  e.g. {sample}")
 assert set(LABEL_MAP.values()) == {0, 1}, "Adjust LABEL_MAP — must contain both classes"
-
-class GraffitiDataset(Dataset):
-    def __init__(self, items, transform):
-        self.items = items; self.transform = transform
-    def __len__(self): return len(self.items)
-    def __getitem__(self, idx):
-        path, label = self.items[idx]
-        img = Image.open(path).convert('RGB')
-        return self.transform(img), torch.tensor(label, dtype=torch.float32)
 
 items = [(p, LABEL_MAP[d.name]) for d in class_dirs.values() for p in d.glob('*.*') if p.suffix.lower() in {'.jpg', '.jpeg', '.png'}]
 print(f"Total samples: {len(items)}")
@@ -310,18 +314,18 @@ Training complete. To deploy this model:
 def build() -> pathlib.Path:
     nb = nbformat.v4.new_notebook()
     nb.cells = [
-        nbformat.v4.new_markdown_cell(CELL_1_MD),
-        nbformat.v4.new_code_cell(CELL_2),
-        nbformat.v4.new_code_cell(CELL_3),
-        nbformat.v4.new_code_cell(CELL_4),
-        nbformat.v4.new_code_cell(CELL_5),
-        nbformat.v4.new_code_cell(CELL_6),
-        nbformat.v4.new_code_cell(CELL_7),
-        nbformat.v4.new_code_cell(CELL_8),
-        nbformat.v4.new_code_cell(CELL_9),
-        nbformat.v4.new_code_cell(CELL_10),
-        nbformat.v4.new_code_cell(CELL_11),
-        nbformat.v4.new_code_cell(CELL_12),
+        nbformat.v4.new_markdown_cell(CELL_1_MD, id="cell-01-intro"),
+        nbformat.v4.new_code_cell(CELL_2, id="cell-02-setup"),
+        nbformat.v4.new_code_cell(CELL_3, id="cell-03-kaggle"),
+        nbformat.v4.new_code_cell(CELL_4, id="cell-04-download"),
+        nbformat.v4.new_code_cell(CELL_5, id="cell-05-eda"),
+        nbformat.v4.new_code_cell(CELL_6, id="cell-06-data"),
+        nbformat.v4.new_code_cell(CELL_7, id="cell-07-model"),
+        nbformat.v4.new_code_cell(CELL_8, id="cell-08-train"),
+        nbformat.v4.new_code_cell(CELL_9, id="cell-09-eval"),
+        nbformat.v4.new_code_cell(CELL_10, id="cell-10-export"),
+        nbformat.v4.new_code_cell(CELL_11, id="cell-11-card"),
+        nbformat.v4.new_code_cell(CELL_12, id="cell-12-deploy"),
     ]
 
     out_path = pathlib.Path(__file__).parent / 'train_graffiti_classifier.ipynb'
