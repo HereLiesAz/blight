@@ -1,7 +1,7 @@
 # Graffiti Classifier — Model Card
 
 **Run ID:** `20260503-183145`
-**Date:** 2026-05-03T19:56:13.858140Z
+**Date:** 2026-05-03T20:28:12.802987Z
 
 ## Model details
 - Architecture: EfficientNet-B0 with binary classification head (Linear 1280 → 1, sigmoid)
