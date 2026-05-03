@@ -122,6 +122,19 @@
         <button id="qr-close" onclick="document.getElementById('qr-modal').style.display='none'">Close Link</button>
     </div>
 
+    <div id="pin-cat-modal">
+        <div class="inner">
+            <h2>📂 Pin categories</h2>
+            <div id="pin-cat-list"></div>
+            <div class="cat-add-row">
+                <input class="emoji-in" id="new-cat-emoji" placeholder="📍" maxlength="4">
+                <input class="name-in" id="new-cat-name" placeholder="Category name">
+                <button onclick="addCategory()">Add</button>
+            </div>
+            <button id="pin-cat-close" onclick="document.getElementById('pin-cat-modal').style.display='none'">Close</button>
+        </div>
+    </div>
+
     <div id="list-modal">
         <button id="list-close" onclick="toggleListView()">X</button>
         <h2>Database Records</h2>
@@ -141,6 +154,7 @@
         <button id="filter-toggle-btn" class="hud-btn" onclick="document.getElementById('filter-drawer').classList.toggle('open')">FILTERS</button>
         <button id="graffiti-filter-btn" class="hud-btn" onclick="cycleGraffitiFilter()">🎨 Graffiti: All</button>
         <button id="graffiti-color-btn" class="hud-btn" onclick="cycleColorMode()">🎨 Color: Status</button>
+        <button class="hud-btn" onclick="openPinCategories()">📂 Pins</button>
         <button id="blighted-list-btn" class="hud-btn" onclick="showBlightedList()">📋 LIST BLIGHTED</button>
         <button id="install-btn" class="hud-btn">✨ Install PWA</button>
         <button class="hud-btn" onclick="toggleListView()">📋 List View</button>
@@ -766,6 +780,57 @@
             savePinCategories(cats);
             map.closePopup();
             showCategoryMenu(L.latLng(lat, lng));
+        };
+
+        window.openPinCategories = function() {
+            renderCategoryList();
+            document.getElementById('pin-cat-modal').style.display = 'block';
+        };
+
+        function renderCategoryList() {
+            const cats = loadPinCategories();
+            const pins = loadUserPins();
+            const list = document.getElementById('pin-cat-list');
+            list.innerHTML = cats.map(c => {
+                const inUse = pins.filter(p => p.category === c.name).length;
+                const safeName = c.name.replace(/'/g, "\\'");
+                return `<div class="cat-row">
+                    <span class="emoji">${c.emoji}</span>
+                    <span class="name">${c.name}${inUse ? ` <small style="color:#888">(${inUse} pin${inUse > 1 ? 's' : ''})</small>` : ''}</span>
+                    <button onclick="deleteCategory('${safeName}')">Delete</button>
+                </div>`;
+            }).join('') || '<p style="color:#888">No categories. Add one below.</p>';
+        }
+
+        window.addCategory = function() {
+            const emoji = document.getElementById('new-cat-emoji').value.trim();
+            const name = document.getElementById('new-cat-name').value.trim();
+            if (!emoji || !name) { alert('Need both emoji and name.'); return; }
+            const cats = loadPinCategories();
+            if (cats.some(c => c.name === name)) { alert('That name is already used.'); return; }
+            cats.push({ emoji, name });
+            savePinCategories(cats);
+            document.getElementById('new-cat-emoji').value = '';
+            document.getElementById('new-cat-name').value = '';
+            renderCategoryList();
+        };
+
+        window.deleteCategory = function(name) {
+            const pins = loadUserPins();
+            const inUse = pins.filter(p => p.category === name);
+            if (inUse.length > 0) {
+                const cats = loadPinCategories().filter(c => c.name !== name);
+                if (cats.length === 0) { alert('Cannot delete the last category while pins exist. Add another first.'); return; }
+                const fallback = cats[0].name;
+                if (!confirm(`${inUse.length} pin${inUse.length > 1 ? 's are' : ' is'} in "${name}". Reassign to "${fallback}" and delete the category?`)) return;
+                const updated = pins.map(p => p.category === name ? { ...p, category: fallback } : p);
+                saveUserPins(updated);
+                savePinCategories(cats);
+                renderUserPins();
+            } else {
+                savePinCategories(loadPinCategories().filter(c => c.name !== name));
+            }
+            renderCategoryList();
         };
 
         // Long-press triggers `contextmenu` on iOS Safari + Android Chrome.
