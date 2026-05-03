@@ -1,7 +1,7 @@
 """Standalone Street View scraper for ad-hoc use.
 
-Usage:
-  python scripts/streetview_scrape.py --lat 29.964 --lng -90.007 --out cache/sample.jpg
+Usage (from repo root):
+  python -m scripts.streetview_scrape --lat 29.964 --lng -90.007 --out cache/sample.jpg
 """
 from __future__ import annotations
 import argparse, pathlib, sys
