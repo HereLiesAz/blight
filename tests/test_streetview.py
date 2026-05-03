@@ -24,3 +24,28 @@ def test_fetch_tile_returns_bytes():
     out = fetch_tile("PANO_X", x=0, y=0, zoom=0)
     assert out == body
     assert out[:3] == b'\xff\xd8\xff'  # JPEG magic
+
+import time as _time
+from scripts.lib.streetview import ScraperSession
+
+@responses.activate
+def test_scraper_retries_on_429(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr(_time, 'sleep', lambda s: sleeps.append(s))
+    responses.add(responses.GET, TILE_URL, status=429)
+    responses.add(responses.GET, TILE_URL, status=429)
+    responses.add(responses.GET, TILE_URL, body=b'\xff\xd8\xff\xe0', status=200)
+    sess = ScraperSession(min_interval_s=0, max_retries=3, backoff_base=0.0)
+    out = sess.fetch_tile("PANO_X")
+    assert out.startswith(b'\xff\xd8\xff')
+    assert len(sleeps) >= 2  # at least one back-off sleep per retry
+
+@responses.activate
+def test_scraper_throttles_between_requests(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr(_time, 'sleep', lambda s: sleeps.append(s))
+    responses.add(responses.GET, TILE_URL, body=b'\xff\xd8\xff', status=200)
+    responses.add(responses.GET, TILE_URL, body=b'\xff\xd8\xff', status=200)
+    sess = ScraperSession(min_interval_s=3.0, max_retries=0, backoff_base=0.0)
+    sess.fetch_tile("A"); sess.fetch_tile("B")
+    assert any(s >= 2.5 for s in sleeps), f"expected a throttle sleep ~3s, got {sleeps}"
