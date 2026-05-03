@@ -39,6 +39,17 @@
 * **Tactical Controls:** * Add a single "Follow GPS" toggle button in the bottom-right corner.
     * Touch targets for all interactive elements must be at least `44px` for mobile accessibility.
 
-## 5. Graffiti Classifier (Optional Enrichment)
+## 5. Property Enrichment & Filters
 
-Each address can be enriched with a graffiti-presence score (0.0–1.0) derived from Street View imagery and a small CNN classifier. The score drives an in-app filter (`🎨 Graffiti: All / Tagged / Clean`) and a color-by-score mode. See [`docs/graffiti-pipeline.md`](docs/graffiti-pipeline.md) for retraining, deployment, and operational details. Model card: [`MODEL_CARD.md`](MODEL_CARD.md).
+Each address is enriched from NOLA Socrata cross-datasets and visual classification:
+
+* **Property type, zoning, land-use, has-structure** (Tabular Address Points + Future Land Use + Building Footprint)
+* **Days under blight, case count, repeat-offender flag** (full case history from Code Enforcement)
+* **Active-rehab signal** (recent permit type + status from the Code Enforcement record)
+* **Last grass-cutting case** (Lot Abatement Chapter 66 — overgrowth proxy)
+* **Graffiti likelihood** (Street View tile + EfficientNet-B0 ONNX classifier)
+* **Street View thumbnail** (cached in a public Google Drive folder)
+
+The map provides a slide-out filter drawer with named presets — "Fresh canvases", "Cluster bombs", "Solo targets", "Repeat offenders", "Long-term abandoned", "About to expire" — and tappable property cards in both list views (in-view blighted list + full database list) showing the thumbnail and every enrichment field for the selected property.
+
+See [`docs/graffiti-pipeline.md`](docs/graffiti-pipeline.md) for setup details (including the one-time `STREETVIEW_DRIVE_FOLDER_ID` secret) and operator runbooks. Model card: [`MODEL_CARD.md`](MODEL_CARD.md).
