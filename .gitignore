@@ -1,2 +1,9 @@
 __pycache__/
 *.pyc
+# ML pipeline
+models/*.onnx
+models/*.pt
+.cache/
+tests/fixtures/*.onnx
+__pycache__/
+.pytest_cache/
