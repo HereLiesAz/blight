@@ -3,7 +3,7 @@
 Designed to be run from GitHub Actions after `update_database.py` succeeds.
 Idempotent: skips rows with a recent graffiti_score.
 
-Required env: GOOGLE_CREDENTIALS (same as update_database.py), MODEL_PATH (default models/graffiti_classifier.onnx).
+Required env: GOOGLE_CREDENTIALS (same as update_database.py), MODEL_PATH (default models/model.onnx).
 
 Invoke as: `python -m scripts.classify_graffiti` from the repo root.
 """
@@ -21,7 +21,7 @@ from scripts.lib.inference import GraffitiClassifier
 from scripts.lib.sheet import GRAFFITI_COLUMNS, ensure_columns, row_needs_classification
 
 SPREADSHEET_ID = '1O5zIhogpzmZLRn36X1Rt6cZUkWeYb2dzUgBTQszq_oE'
-DEFAULT_MODEL = pathlib.Path('models/graffiti_classifier.onnx')
+DEFAULT_MODEL = pathlib.Path('models/model.onnx')
 MAX_AGE_DAYS = int(os.environ.get("GRAFFITI_MAX_AGE_DAYS", "30"))
 MAX_PER_RUN = int(os.environ.get("GRAFFITI_MAX_PER_RUN", "200"))
 

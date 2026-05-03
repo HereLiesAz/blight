@@ -33,7 +33,7 @@ jobs:
         if: success()
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.SHEETS_API }}
-          MODEL_PATH: models/graffiti_classifier.onnx
+          MODEL_PATH: models/model.onnx
           GRAFFITI_MAX_PER_RUN: '50'
           GRAFFITI_MIN_INTERVAL_S: '4.0'
         run: python -m scripts.classify_graffiti || echo "graffiti classification failed; continuing"

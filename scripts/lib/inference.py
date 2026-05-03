@@ -29,7 +29,7 @@ def _preprocess(jpeg_bytes: bytes) -> np.ndarray:
     return arr.astype(np.float32)
 
 def _sigmoid(x: np.ndarray) -> np.ndarray:
-    return 1.0 / (1.0 + np.exp(-x))
+    return 1.0 / (1.0 + np.exp(-np.clip(x, -50.0, 50.0)))
 
 class GraffitiClassifier:
     def __init__(self, model_path: str):
