@@ -57,6 +57,10 @@
         .filter-drawer input[type=range] { width: 100%; }
         .filter-drawer select { width: 100%; padding: 6px; background: #222; color: #eee; border: 1px solid #555; border-radius: 4px; }
         #filter-toggle-btn { z-index: 1101; }
+        .filter-actions { position: sticky; bottom: 0; left: 0; right: 0; margin: 16px -16px -16px -16px; padding: 12px 16px; background: rgba(11,11,11,0.98); border-top: 1px solid #444; display: flex; gap: 8px; }
+        .filter-actions button { flex: 1; padding: 10px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-family: monospace; font-size: 13px; }
+        #filter-apply-btn { background: #FFBF00; color: #0b0b0b; }
+        #filter-reset-btn { background: #333; color: #eee; border: 1px solid #555; }
 
         .prop-row { padding: 12px; border-bottom: 1px solid #333; cursor: pointer; }
         .prop-row.expanded { background: #181818; }
@@ -227,6 +231,10 @@
                 <span class="chip" data-cluster="cluster">Cluster</span>
                 <span class="chip active" data-cluster="all">All</span>
             </div>
+        </div>
+        <div class="filter-actions">
+            <button id="filter-reset-btn" onclick="applyPreset('all'); document.getElementById('preset-select').value='all';">Reset</button>
+            <button id="filter-apply-btn" onclick="applyFilters(); document.getElementById('filter-drawer').classList.remove('open');">Apply &amp; Close</button>
         </div>
     </div>
 
