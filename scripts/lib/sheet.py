@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import datetime
 
-GRAFFITI_COLUMNS = ("graffiti_score", "graffiti_panoid", "graffiti_classified_at")
+GRAFFITI_COLUMNS = ("graffiti_score", "graffiti_panoid", "graffiti_classified_at", "streetview_thumb_url")
 
 def ensure_columns(header_row: list[str]) -> list[str]:
     """Return header_row with GRAFFITI_COLUMNS appended if not already present."""
