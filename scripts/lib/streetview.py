@@ -30,3 +30,16 @@ def lookup_panoid(lat: float, lng: float, *, radius_m: int = 50, session: reques
         return data[1][0][0][1]
     except (TypeError, IndexError, KeyError):
         raise PanoramaNotFound(f"No panorama near ({lat}, {lng})")
+
+TILE_URL = "https://streetviewpixels-pa.googleapis.com/v1/tile"
+
+def fetch_tile(panoid: str, *, x: int = 0, y: int = 0, zoom: int = 0,
+               session: requests.Session | None = None, timeout: float = 10.0) -> bytes:
+    """Fetch a single Street View panorama tile as JPEG bytes."""
+    s = session or requests
+    r = s.get(TILE_URL,
+              params={"cb_client": "maps_sv.tactile", "panoid": panoid,
+                      "x": x, "y": y, "zoom": zoom, "nbt": 1, "fover": 2},
+              timeout=timeout)
+    r.raise_for_status()
+    return r.content
