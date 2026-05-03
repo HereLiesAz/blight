@@ -72,6 +72,29 @@
 
         #list-modal { display: none; position: fixed; inset: 0; background: #0b0b0b; z-index: 2000; padding: 60px 20px 20px 20px; overflow-y: auto; color: #eee; }
         #list-close { position: fixed; top: 10px; right: 10px; padding: 8px 14px; background: #900; color: #fff; border: none; border-radius: 4px; cursor: pointer; z-index: 2001; }
+
+        /* User pins — emoji markers */
+        .user-pin-icon { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-size: 22px; background: rgba(11,11,11,0.85); border: 2px solid #FFBF00; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.6); }
+        .user-pin-icon.hotspot { border-color: #ff44aa; animation: pinPulse 1.6s ease-in-out infinite; }
+        @keyframes pinPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(255,68,170,0.6); } 50% { box-shadow: 0 0 0 8px rgba(255,68,170,0); } }
+        .pin-cat-menu { display: flex; flex-direction: column; gap: 4px; min-width: 200px; }
+        .pin-cat-menu button { width: 100%; padding: 8px; background: #222; color: #eee; border: 1px solid #444; border-radius: 4px; cursor: pointer; font-size: 14px; text-align: left; }
+        .pin-cat-menu button:hover { background: #333; }
+        .pin-cat-menu button.cancel { background: #500; color: #fff; border-color: #800; }
+        .pin-cat-menu button.add-new { background: #003366; color: #FFBF00; border-color: #007bff; }
+        #pin-cat-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 10001; }
+        #pin-cat-modal .inner { background: #111; max-width: 420px; margin: 10vh auto; padding: 20px; border: 2px solid #FFBF00; border-radius: 8px; color: #eee; max-height: 80vh; overflow-y: auto; }
+        #pin-cat-modal h2 { color: #FFBF00; margin-top: 0; }
+        .cat-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #333; }
+        .cat-row .emoji { font-size: 20px; min-width: 28px; text-align: center; }
+        .cat-row .name { flex: 1; }
+        .cat-row button { padding: 4px 10px; background: #500; color: #fff; border: 1px solid #800; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .cat-add-row { display: flex; gap: 6px; margin-top: 12px; }
+        .cat-add-row input { padding: 6px; background: #222; color: #eee; border: 1px solid #555; border-radius: 4px; }
+        .cat-add-row input.emoji-in { width: 60px; text-align: center; font-size: 18px; }
+        .cat-add-row input.name-in { flex: 1; }
+        .cat-add-row button { padding: 6px 14px; background: #FFBF00; color: #0b0b0b; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        #pin-cat-close { width: 100%; margin-top: 14px; padding: 8px; background: #333; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -203,7 +226,49 @@
         const guiltyLayer = L.layerGroup().addTo(map);
         const uncommittedLayer = L.layerGroup().addTo(map);
         const heatLayer = L.heatLayer([], { radius: 25, blur: 15, maxZoom: 17 }).addTo(map);
-        L.control.layers({ "Tactical Dark": darkMap, "Satellite": satelliteMap }, { "<span style='color: #ff0000;'>Blighted</span>": guiltyLayer, "<span style='color: #FFBF00;'>Uncommitted</span>": uncommittedLayer, "🔥 Heatmap": heatLayer }, { position: 'topright', collapsed: false }).addTo(map);
+        const userPinsLayer = L.layerGroup().addTo(map);
+        const hotspotLayer = L.layerGroup();
+        L.control.layers(
+            { "Tactical Dark": darkMap, "Satellite": satelliteMap },
+            {
+                "<span style='color: #ff0000;'>Blighted</span>": guiltyLayer,
+                "<span style='color: #FFBF00;'>Uncommitted</span>": uncommittedLayer,
+                "🔥 Heatmap": heatLayer,
+                "📍 My pins": userPinsLayer,
+                "🎨 Hotspots (auto)": hotspotLayer,
+            },
+            { position: 'topright', collapsed: false }
+        ).addTo(map);
+
+        const DEFAULT_PIN_CATEGORIES = [
+            { name: "Target",       emoji: "🎯" },
+            { name: "Scout",        emoji: "👁️" },
+            { name: "Hit",          emoji: "🎨" },
+            { name: "Photographed", emoji: "📷" },
+            { name: "Done",         emoji: "✅" },
+            { name: "Skip",         emoji: "🚫" },
+        ];
+        function loadPinCategories() {
+            try {
+                const raw = localStorage.getItem('pin_categories');
+                if (!raw) return [...DEFAULT_PIN_CATEGORIES];
+                const parsed = JSON.parse(raw);
+                return Array.isArray(parsed) && parsed.length ? parsed : [...DEFAULT_PIN_CATEGORIES];
+            } catch { return [...DEFAULT_PIN_CATEGORIES]; }
+        }
+        function savePinCategories(cats) { localStorage.setItem('pin_categories', JSON.stringify(cats)); }
+        function loadUserPins() {
+            try {
+                const raw = localStorage.getItem('user_pins');
+                if (!raw) return [];
+                const parsed = JSON.parse(raw);
+                return Array.isArray(parsed) ? parsed : [];
+            } catch { return []; }
+        }
+        function saveUserPins(pins) { localStorage.setItem('user_pins', JSON.stringify(pins)); }
+        function pinCategoryFor(name) {
+            return loadPinCategories().find(c => c.name === name) || { name, emoji: '📍' };
+        }
 
         let masterData = [];
         let graffitiFilter = 'all'; // 'all' | 'graffiti' | 'clean'
