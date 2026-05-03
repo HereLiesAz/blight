@@ -100,6 +100,8 @@
     </div>
 
     <div class="hud-controls">
+        <button id="graffiti-filter-btn" class="hud-btn" onclick="cycleGraffitiFilter()">🎨 Graffiti: All</button>
+        <button id="graffiti-color-btn" class="hud-btn" onclick="cycleColorMode()">🎨 Color: Status</button>
         <button id="blighted-list-btn" class="hud-btn" onclick="showBlightedList()">📋 LIST BLIGHTED</button>
         <button id="install-btn" class="hud-btn">✨ Install PWA</button>
         <button class="hud-btn" onclick="toggleListView()">📋 List View</button>
@@ -122,6 +124,8 @@
         L.control.layers({ "Tactical Dark": darkMap, "Satellite": satelliteMap }, { "<span style='color: #ff0000;'>Blighted</span>": guiltyLayer, "<span style='color: #FFBF00;'>Uncommitted</span>": uncommittedLayer, "🔥 Heatmap": heatLayer }, { position: 'topright', collapsed: false }).addTo(map);
 
         let masterData = [];
+        let graffitiFilter = 'all'; // 'all' | 'graffiti' | 'clean'
+        let colorMode = 'status';   // 'status' | 'graffiti' (used by G4)
         let syncQueue = new Set();
         const syncUI = document.getElementById('sync-status');
         
@@ -143,6 +147,20 @@
             stopGps();
             document.body.style.filter = 'contrast(2) brightness(0)';
             setTimeout(() => location.reload(), 800);
+        };
+
+        window.cycleGraffitiFilter = function() {
+            const order = { all: 'graffiti', graffiti: 'clean', clean: 'all' };
+            const labels = { all: 'All', graffiti: 'Tagged', clean: 'Clean' };
+            graffitiFilter = order[graffitiFilter];
+            document.getElementById('graffiti-filter-btn').textContent = '🎨 Graffiti: ' + labels[graffitiFilter];
+            filterTimeline();
+        };
+
+        window.cycleColorMode = function() {
+            colorMode = colorMode === 'status' ? 'graffiti' : 'status';
+            document.getElementById('graffiti-color-btn').textContent = '🎨 Color: ' + (colorMode === 'status' ? 'Status' : 'Graffiti');
+            filterTimeline();  // re-render with new colors
         };
 
         window.toggleListView = function() {
@@ -260,7 +278,9 @@
             let activeHeat = [];
 
             masterData.forEach(item => {
-                if(monthsBack === 0 || item.date >= cutoffDate) {
+                const timelineOk = (monthsBack === 0 || item.date >= cutoffDate);
+                const graffitiOk = shouldShowByGraffiti(item.prop);
+                if(timelineOk && graffitiOk) {
                     activeHeat.push([item.lat, item.lng]);
                     addMarker(item.lat, item.lng, item.prop, false);
                 }
@@ -282,7 +302,7 @@
                         let status = (prop.status && prop.status.toLowerCase().includes('guilty')) ? 'Guilty' : 'Uncommitted';
                         const noticeDate = parseSocrataDate(prop.notice_date);
 
-                        masterData.push({ caseno: prop.casenumber, lat: lat, lng: lng, date: noticeDate, prop: { address: prop.address || 'Unknown', status: status, noticeDate: noticeDate.toLocaleDateString(), deadline: new Date(noticeDate.getTime() + 30*24*60*60*1000).toLocaleDateString() }});
+                        masterData.push({ caseno: prop.casenumber, lat: lat, lng: lng, date: noticeDate, prop: { address: prop.address || 'Unknown', status: status, noticeDate: noticeDate.toLocaleDateString(), deadline: new Date(noticeDate.getTime() + 30*24*60*60*1000).toLocaleDateString(), graffitiScore: null, graffitiPanoid: null, graffitiClassifiedAt: null }});
                     });
                     filterTimeline();
                 } catch (error) { console.error("Signal Lost", error); }
@@ -312,6 +332,13 @@
                     
                     let noticeDate = parseSocrataDate(noticeDateRaw);
 
+                    const rawScore = row.graffiti_score;
+                    let graffitiScore = null;
+                    if (rawScore !== undefined && rawScore !== null && rawScore !== '') {
+                        const parsed = parseFloat(rawScore);
+                        if (isFinite(parsed)) graffitiScore = parsed;
+                    }
+
                     masterData.push({
                         caseno: caseno,
                         lat: lat,
@@ -321,7 +348,10 @@
                             address: address,
                             status: status,
                             noticeDate: noticeDate.toLocaleDateString(),
-                            deadline: new Date(noticeDate.getTime() + 30*24*60*60*1000).toLocaleDateString()
+                            deadline: new Date(noticeDate.getTime() + 30*24*60*60*1000).toLocaleDateString(),
+                            graffitiScore: graffitiScore,
+                            graffitiPanoid: row.graffiti_panoid || null,
+                            graffitiClassifiedAt: row.graffiti_classified_at || null
                         }
                     });
                 });
@@ -329,18 +359,35 @@
             } catch (error) { console.error("Signal Lost", error); }
         }
 
+        function shouldShowByGraffiti(prop) {
+          if (graffitiFilter === 'all') return true;
+          if (prop.graffitiScore == null) return false;
+          return graffitiFilter === 'graffiti' ? prop.graffitiScore >= 0.5 : prop.graffitiScore < 0.5;
+        }
+
+        function markerColor(prop) {
+          if (colorMode === 'graffiti') {
+            if (prop.graffitiScore == null) return '#777';
+            const r = Math.round(255 * prop.graffitiScore);
+            const b = Math.round(255 * (1 - prop.graffitiScore));
+            return `rgb(${r},80,${b})`;
+          }
+          return prop.status === 'Guilty' ? '#ff0000' : '#FFBF00';
+        }
+
         function addMarker(lat, lng, property, saveToMaster = true) {
             const isGuilty = property.status === 'Guilty';
-            const marker = L.circleMarker([lat, lng], { radius: 8, fillColor: isGuilty ? '#ff0000' : '#FFBF00', color: '#fff', weight: 1, fillOpacity: 0.8 });
+            const marker = L.circleMarker([lat, lng], { radius: 8, fillColor: markerColor(property), color: '#fff', weight: 1, fillOpacity: 0.8 });
             if (isGuilty) guiltyLayer.addLayer(marker); else uncommittedLayer.addLayer(marker);
 
             const safeAddr = property.address.replace(/'/g, "\\'");
             const imgData = getImg(safeAddr);
-            
+
             marker.bindPopup(`
 <div class="popup-content">
   <h3>${property.address}</h3>
   <p><b>Status:</b> ${property.status}</p>
+  <p><b>Graffiti likelihood:</b> ${property.graffitiScore != null ? (property.graffitiScore * 100).toFixed(0) + '%' : '—'}</p>
   <img id="img_${safeAddr}" class="img-preview" src="${imgData}" style="display:${imgData ? 'block' : 'none'};">
   <textarea class="note-stash" placeholder="Intel stash..." onchange="saveNote('${safeAddr}', this.value)">${getNote(safeAddr)}</textarea>
   <div class="route-grid">

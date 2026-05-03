@@ -38,3 +38,7 @@
     ```
 * **Tactical Controls:** * Add a single "Follow GPS" toggle button in the bottom-right corner.
     * Touch targets for all interactive elements must be at least `44px` for mobile accessibility.
+
+## 5. Graffiti Classifier (Optional Enrichment)
+
+Each address can be enriched with a graffiti-presence score (0.0–1.0) derived from Street View imagery and a small CNN classifier. The score drives an in-app filter (`🎨 Graffiti: All / Tagged / Clean`) and a color-by-score mode. See [`docs/graffiti-pipeline.md`](docs/graffiti-pipeline.md) for retraining, deployment, and operational details. Model card: [`MODEL_CARD.md`](MODEL_CARD.md).
