@@ -14,7 +14,13 @@ SOCRATA_ENDPOINT = 'https://data.nola.gov/resource/gjzc-adg8.json'
 # We will use the same bounding box filtering as the frontend does:
 # Bounds approx: North: 29.98, West: -90.03, South: 29.95, East: -89.98 for Lower Ninth
 BOUNDS = "within_box(the_geom, 29.98, -90.03, 29.95, -89.98)"
-QUERY = f"?$select=geoaddress AS address, prevhearingresult AS status, casefiled AS notice_date, the_geom AS location, caseno AS casenumber&$where={BOUNDS} AND prevhearingresult IN('Guilty', 'Uncommitted')&$limit=50000"
+SELECT_FIELDS = (
+    "geoaddress AS address, prevhearingresult AS status, casefiled AS notice_date, "
+    "the_geom AS location, caseno AS casenumber, geopin, initinspection, "
+    "permittype AS permit_type, permitstatus AS permit_status, permitfiling AS permit_filing, "
+    "nexthearingdate AS next_hearing, stage, o_c, zipcode"
+)
+QUERY = f"?$select={SELECT_FIELDS}&$where={BOUNDS} AND prevhearingresult IN('Guilty', 'Uncommitted')&$limit=50000"
 
 def parse_socrata_date(date_str):
     if not date_str:
@@ -32,6 +38,11 @@ def parse_socrata_date(date_str):
         print(f"Failed to parse date {date_str}: {e}")
         return None
 
+
+def _parse_socrata_date_str(date_str):
+    d = parse_socrata_date(date_str)
+    return d.strftime("%m/%d/%Y") if d else ""
+
 def main():
     print("Fetching data from NOLA Socrata API...")
     url = SOCRATA_ENDPOINT + QUERY
@@ -45,19 +56,30 @@ def main():
     print(f"Retrieved {len(data)} records.")
 
     processed_data = []
-    # Add Headers
+    # Add Headers (A-T are owned by this script and rewritten on every run.
+    # Columns U+ are owned by enrich_properties.py and classify_graffiti.py
+    # and are preserved across runs because batch_clear scopes A:T only.)
     processed_data.append([
-        "Address",
-        "Neighborhood",
-        "Name/Type",
-        "Features & 2026 Status",
-        "Previous Statuses",
-        "Updated on",
-        "Case Number",
-        "Notice Date",
-        "Deadline",
-        "Latitude",
-        "Longitude"
+        "Address",                # A
+        "Neighborhood",           # B
+        "Name/Type",              # C
+        "Features & 2026 Status", # D (Status)
+        "Previous Statuses",      # E
+        "Updated on",             # F
+        "Case Number",            # G
+        "Notice Date",            # H
+        "Deadline",               # I
+        "Latitude",               # J
+        "Longitude",              # K
+        "geopin",                 # L
+        "init_inspection",        # M
+        "permit_type",            # N
+        "permit_status",          # O
+        "permit_filing",          # P
+        "next_hearing",           # Q
+        "stage",                  # R
+        "o_c",                    # S
+        "zipcode",                # T
     ])
 
     seen_cases = set()
@@ -94,17 +116,26 @@ def main():
             deadline = ""
 
         processed_data.append([
-            address,                 # A: Address
-            "Lower Ninth Ward",      # B: Neighborhood
-            "",                      # C: Name/Type (blank for now)
-            status,                  # D: Features & 2026 Status (Status)
-            "",                      # E: Previous Statuses (blank for now)
-            current_date,            # F: Updated on
-            caseno,                  # G: Case Number
-            notice_date,             # H: Notice Date
-            deadline,                # I: Deadline
-            lat,                     # J: Latitude
-            lng                      # K: Longitude
+            address,                                          # A: Address
+            "Lower Ninth Ward",                               # B: Neighborhood
+            "",                                               # C: Name/Type (blank for now)
+            status,                                           # D: Features & 2026 Status (Status)
+            "",                                               # E: Previous Statuses (blank for now)
+            current_date,                                     # F: Updated on
+            caseno,                                           # G: Case Number
+            notice_date,                                      # H: Notice Date
+            deadline,                                         # I: Deadline
+            lat,                                              # J: Latitude
+            lng,                                              # K: Longitude
+            row.get("geopin", ""),                            # L
+            _parse_socrata_date_str(row.get("initinspection")),  # M
+            row.get("permit_type", ""),                       # N
+            row.get("permit_status", ""),                     # O
+            _parse_socrata_date_str(row.get("permit_filing")),# P
+            _parse_socrata_date_str(row.get("next_hearing")), # Q
+            row.get("stage", ""),                             # R
+            row.get("o_c", ""),                               # S
+            row.get("zipcode", ""),                           # T
         ])
         seen_cases.add(caseno)
 
@@ -127,8 +158,8 @@ def main():
         print(f"Opening spreadsheet {SPREADSHEET_ID}...")
         sheet = client.open_by_key(SPREADSHEET_ID).sheet1
 
-        print("Clearing existing data in columns A:K...")
-        sheet.batch_clear(["A:K"])
+        print("Clearing existing data in columns A:T (preserves enrichment cols U+)...")
+        sheet.batch_clear(["A:T"])
 
         print("Writing new data...")
         sheet.update(processed_data, "A1")

@@ -6,7 +6,7 @@ def test_ensure_columns_adds_missing_headers():
                   "Deadline", "Latitude", "Longitude"]
     new_header = ensure_columns(header_row)
     assert new_header[:11] == header_row
-    assert tuple(new_header[11:14]) == GRAFFITI_COLUMNS
+    assert tuple(new_header[11:11 + len(GRAFFITI_COLUMNS)]) == GRAFFITI_COLUMNS
 
 def test_ensure_columns_idempotent():
     header_row = ["Address", "Latitude", "Longitude"] + list(GRAFFITI_COLUMNS)
@@ -19,7 +19,8 @@ NOW = _dt.datetime(2026, 5, 3, tzinfo=_dt.timezone.utc)
 
 def _row(score="", classified_at=""):
     return {"Address": "1 X St", "Latitude": "29.96", "Longitude": "-90.01",
-            "graffiti_score": score, "graffiti_panoid": "", "graffiti_classified_at": classified_at}
+            "graffiti_score": score, "graffiti_panoid": "",
+            "graffiti_classified_at": classified_at, "streetview_thumb_url": ""}
 
 def test_row_needs_classification_when_no_score():
     assert row_needs_classification(_row(), now=NOW, max_age_days=30) is True

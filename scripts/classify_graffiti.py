@@ -19,11 +19,13 @@ from google.oauth2.service_account import Credentials
 from scripts.lib.streetview import ScraperSession, PanoramaNotFound
 from scripts.lib.inference import GraffitiClassifier
 from scripts.lib.sheet import GRAFFITI_COLUMNS, ensure_columns, row_needs_classification
+from scripts.lib.drive_uploader import DriveUploader, compress_thumbnail
 
 SPREADSHEET_ID = '1O5zIhogpzmZLRn36X1Rt6cZUkWeYb2dzUgBTQszq_oE'
 DEFAULT_MODEL = pathlib.Path('models/model.onnx')
 MAX_AGE_DAYS = int(os.environ.get("GRAFFITI_MAX_AGE_DAYS", "30"))
 MAX_PER_RUN = int(os.environ.get("GRAFFITI_MAX_PER_RUN", "200"))
+DRIVE_FOLDER_ID = os.environ.get("STREETVIEW_DRIVE_FOLDER_ID", "").strip()
 
 def _open_sheet():
     creds = json.loads(os.environ["GOOGLE_CREDENTIALS"])
@@ -50,6 +52,17 @@ def main() -> int:
     sess = ScraperSession(min_interval_s=float(os.environ.get("GRAFFITI_MIN_INTERVAL_S", "3.0")))
     now = datetime.datetime.now(datetime.timezone.utc)
 
+    uploader = None
+    if DRIVE_FOLDER_ID:
+        creds = Credentials.from_service_account_info(
+            json.loads(os.environ["GOOGLE_CREDENTIALS"]),
+            scopes=['https://www.googleapis.com/auth/spreadsheets',
+                    'https://www.googleapis.com/auth/drive.file'],
+        )
+        uploader = DriveUploader(creds, DRIVE_FOLDER_ID)
+    else:
+        print("STREETVIEW_DRIVE_FOLDER_ID not set; skipping thumbnail upload.", file=sys.stderr)
+
     processed = 0
     for r_i, row in enumerate(rows[1:], start=2):  # 1-based row index, skipping header
         row += [""] * (len(header) - len(row))
@@ -63,6 +76,7 @@ def main() -> int:
         except (KeyError, ValueError):
             continue
 
+        tile = None
         try:
             panoid = sess.lookup_panoid(lat, lng)
             tile = sess.fetch_tile(panoid, zoom=0)
@@ -72,12 +86,21 @@ def main() -> int:
         except Exception as e:
             print(f"row {r_i}: {e}", file=sys.stderr); continue
 
+        thumb_url = ""
+        if uploader and tile and panoid not in (None, "", "NO_PANO"):
+            try:
+                thumb_url = uploader.upload(panoid, compress_thumbnail(tile))
+            except Exception as e:
+                print(f"row {r_i}: thumbnail upload failed: {e}", file=sys.stderr)
+
         ts = now.isoformat(timespec='seconds')
         updates = {
             col_idx["graffiti_score"]: f"{score:.4f}",
             col_idx["graffiti_panoid"]: panoid,
             col_idx["graffiti_classified_at"]: ts,
         }
+        if "streetview_thumb_url" in col_idx:
+            updates[col_idx["streetview_thumb_url"]] = thumb_url
         # Single batched cell update per row to minimize API calls
         cells = [gspread.Cell(r_i, c + 1, v) for c, v in updates.items()]
         sheet.update_cells(cells)
