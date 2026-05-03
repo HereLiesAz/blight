@@ -399,9 +399,12 @@
                 const key = localStorage.key(i);
                 if (key.startsWith('txt_')) stash.push({ a: key.replace('txt_', ''), n: getNote(key.replace('txt_', '')) });
             }
-            if(stash.length === 0) return alert('No intel to beam.');
+            const pins = loadUserPins();
+            const cats = loadPinCategories();
+            if (stash.length === 0 && pins.length === 0) return alert('No intel to beam.');
+            const payload = JSON.stringify({ stash, pins, cats });
             document.getElementById('qrcode').innerHTML = '';
-            new QRCode(document.getElementById("qrcode"), { text: JSON.stringify(stash), width: 256, height: 256, correctLevel: QRCode.CorrectLevel.L });
+            new QRCode(document.getElementById("qrcode"), { text: payload, width: 256, height: 256, correctLevel: QRCode.CorrectLevel.L });
             document.getElementById('qr-modal').style.display = 'block';
         };
 
@@ -571,6 +574,24 @@
                 addMarker(item.lat, item.lng, p, false);
             });
             heatLayer.setLatLngs(heat);
+            renderHotspots();
+        }
+
+        const HOTSPOT_THRESHOLD = 0.8;
+        function renderHotspots() {
+            hotspotLayer.clearLayers();
+            masterData.forEach(item => {
+                const s = item.prop.graffitiScore;
+                if (s == null || s < HOTSPOT_THRESHOLD) return;
+                const marker = L.marker([item.lat, item.lng], { icon: makePinIcon('🎨', 'hotspot') });
+                marker.bindPopup(`
+                    <div class="popup-content">
+                        <h3>🎨 Auto-hotspot</h3>
+                        <p><b>Address:</b> ${item.prop.address}</p>
+                        <p><b>Score:</b> ${(s * 100).toFixed(0)}%</p>
+                    </div>`);
+                hotspotLayer.addLayer(marker);
+            });
         }
 
         async function fetchSectorData() {
