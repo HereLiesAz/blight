@@ -13,9 +13,16 @@ def _preprocess(jpeg_bytes: bytes) -> np.ndarray:
         img = Image.open(BytesIO(jpeg_bytes)).convert('RGB')
     except UnidentifiedImageError as e:
         raise ValueError(f"not a decodable image: {e}") from e
-    img = img.resize((256, 256))
-    left = (256 - 224) // 2
-    img = img.crop((left, left, left + 224, left + 224))
+    # Match training Cell 6 eval_tf: resize shorter side to 256 (preserve aspect), then center-crop 224.
+    w, h = img.size
+    if w < h:
+        new_w, new_h = 256, round(h * 256 / w)
+    else:
+        new_w, new_h = round(w * 256 / h), 256
+    img = img.resize((new_w, new_h))
+    left = (new_w - 224) // 2
+    top = (new_h - 224) // 2
+    img = img.crop((left, top, left + 224, top + 224))
     arr = np.asarray(img, dtype=np.float32) / 255.0
     arr = (arr - IMAGENET_MEAN) / IMAGENET_STD
     arr = arr.transpose(2, 0, 1)[None, ...]  # NCHW
