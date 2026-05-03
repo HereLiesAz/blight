@@ -5,7 +5,7 @@ End-to-end overview of how addresses become graffiti scores, plus how to retrain
 ## Architecture
 
 ```
-Kaggle dataset ──[Colab notebook]──▶ EfficientNet-B0 fine-tuned ──▶ models/graffiti_classifier.onnx (~5 MB INT8)
+Kaggle dataset ──[Colab notebook]──▶ EfficientNet-B0 fine-tuned ──▶ models/model.onnx (~5 MB INT8)
                                               │
                                               └──▶ Google Drive (checkpoints, metrics, model card)
 
@@ -24,7 +24,7 @@ Sheet rows ──[GH Actions cron]──▶ scrape Street View tile ──▶ ON
 |---|---|
 | `notebooks/train_graffiti_classifier.ipynb` | Colab fine-tune notebook |
 | `notebooks/_build_notebook.py` | Programmatic builder for the notebook (regenerate after edits) |
-| `models/graffiti_classifier.onnx` | INT8-quantized model used at inference (gitignored, force-added) |
+| `models/model.onnx` | INT8-quantized model used at inference (gitignored, force-added) |
 | `scripts/lib/streetview.py` | Throttled HTTP scraper of Street View panoramas + tiles |
 | `scripts/lib/inference.py` | ONNX runtime wrapper |
 | `scripts/lib/sheet.py` | Sheet column helpers |
@@ -42,13 +42,20 @@ Sheet rows ──[GH Actions cron]──▶ scrape Street View tile ──▶ ON
 6. In a local checkout:
 
    ```bash
-   cp <downloaded>/quantized.onnx models/graffiti_classifier.onnx
+   # Use the FP32 model.onnx (and its .data sidecar if present) for accuracy,
+   # or the smaller INT8 quantized.onnx for faster CPU inference.
+   cp <downloaded>/model.onnx models/model.onnx
+   cp <downloaded>/model.onnx.data models/model.onnx.data 2>/dev/null || true
+   cp <downloaded>/metrics.json models/metrics.json
    cp <downloaded>/model_card.md MODEL_CARD.md
-   git add -f models/graffiti_classifier.onnx
-   git add MODEL_CARD.md
+   git add -f models/model.onnx
+   git add models/model.onnx.data 2>/dev/null || true
+   git add models/metrics.json MODEL_CARD.md
    git commit -m "Update graffiti classifier"
    git push origin main
    ```
+
+   The `.gitignore` ignores `models/*.onnx`, so `git add -f` is required for the ONNX file. The `.onnx.data` sidecar (only present when the model exceeds protobuf's 2 GB limit, which can happen with the FP32 EfficientNet-B0 + external-data export) is NOT gitignored and adds normally — it must sit alongside the `.onnx` file for ONNX Runtime to load.
 
 The next scheduled `Update Database` workflow run will pick up the new model and start scoring rows.
 
@@ -71,7 +78,7 @@ python -m scripts.streetview_scrape --lat 29.964 --lng -90.007 --out cache/sampl
 # Score it
 python -c "
 from scripts.lib.inference import GraffitiClassifier
-print(GraffitiClassifier('models/graffiti_classifier.onnx').score(open('cache/sample.jpg','rb').read()))
+print(GraffitiClassifier('models/model.onnx').score(open('cache/sample.jpg','rb').read()))
 "
 ```
 
@@ -79,7 +86,7 @@ print(GraffitiClassifier('models/graffiti_classifier.onnx').score(open('cache/sa
 
 ```bash
 export GOOGLE_CREDENTIALS="$(cat path/to/service-account.json)"
-export MODEL_PATH=models/graffiti_classifier.onnx
+export MODEL_PATH=models/model.onnx
 export GRAFFITI_MAX_PER_RUN=10        # cap for testing
 export GRAFFITI_MIN_INTERVAL_S=4.0    # be kind to the source IP
 python -m scripts.classify_graffiti
@@ -93,7 +100,7 @@ Without `MODEL_PATH` (or with a path that does not exist), the job exits 0 with 
 
 ```python
 from scripts.lib.inference import GraffitiClassifier
-clf = GraffitiClassifier('models/graffiti_classifier.onnx')
+clf = GraffitiClassifier('models/model.onnx')
 score = clf.score(open('photo.jpg', 'rb').read())   # 0.0–1.0
 ```
 
