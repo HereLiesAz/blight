@@ -57,6 +57,21 @@
         .filter-drawer input[type=range] { width: 100%; }
         .filter-drawer select { width: 100%; padding: 6px; background: #222; color: #eee; border: 1px solid #555; border-radius: 4px; }
         #filter-toggle-btn { z-index: 1101; }
+
+        .prop-row { padding: 12px; border-bottom: 1px solid #333; cursor: pointer; }
+        .prop-row.expanded { background: #181818; }
+        .prop-card { display: none; padding: 10px 0; border-top: 1px solid #333; margin-top: 10px; }
+        .prop-row.expanded .prop-card { display: block; }
+        .prop-card img.thumb { display: block; max-width: 256px; max-height: 256px; border-radius: 6px; margin-bottom: 10px; }
+        .prop-card dl { margin: 0; font-size: 13px; }
+        .prop-card dt { color: #FFBF00; font-weight: bold; margin-top: 6px; }
+        .prop-card dd { margin: 2px 0 0 0; }
+        .prop-card .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+        .prop-card .actions a, .prop-card .actions button { padding: 6px 10px; background: #222; color: #FFBF00; border: 1px solid #FFBF00; text-decoration: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .prop-card .note-stash, .prop-card .img-preview { margin-top: 10px; }
+
+        #list-modal { display: none; position: fixed; inset: 0; background: #0b0b0b; z-index: 2000; padding: 60px 20px 20px 20px; overflow-y: auto; color: #eee; }
+        #list-close { position: fixed; top: 10px; right: 10px; padding: 8px 14px; background: #900; color: #fff; border: none; border-radius: 4px; cursor: pointer; z-index: 2001; }
     </style>
 </head>
 <body>
@@ -87,18 +102,7 @@
     <div id="list-modal">
         <button id="list-close" onclick="toggleListView()">X</button>
         <h2>Database Records</h2>
-        <table class="data-table" id="data-table">
-            <thead>
-                <tr>
-                    <th>Case No</th>
-                    <th>Address</th>
-                    <th>Status</th>
-                    <th>Notice Date</th>
-                    <th>Deadline</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
+        <div id="data-list" style="max-height: calc(100vh - 140px); overflow-y: auto;"></div>
     </div>
 
     <div id="scrape-status">🔄 Triggering Update...</div>
@@ -257,19 +261,13 @@
                 modal.style.display = 'none';
                 return;
             }
-            const tbody = document.querySelector('#data-table tbody');
-            tbody.innerHTML = '';
-            masterData.forEach(item => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${item.caseno}</td>
-                    <td>${item.prop.address}</td>
-                    <td>${item.prop.status}</td>
-                    <td>${item.prop.noticeDate}</td>
-                    <td>${item.prop.deadline}</td>
-                `;
-                tbody.appendChild(tr);
-            });
+            const list = document.getElementById('data-list');
+            list.innerHTML = masterData.map(item => `
+                <div class="prop-row" onclick="this.classList.toggle('expanded')">
+                    <strong>${item.prop.address}</strong>
+                    <small style="color:#888;display:block">${item.caseno} · ${item.prop.status} · ${item.prop.deadline}</small>
+                    ${renderPropCard(item)}
+                </div>`).join('');
             modal.style.display = 'block';
         };
 
@@ -346,6 +344,56 @@
             };
             reader.readAsDataURL(file);
         };
+
+        function parseFloatOrNull(v) { if (v === undefined || v === null || v === '') return null; const n = parseFloat(v); return Number.isFinite(n) ? n : null; }
+        function parseIntOrNull(v) { if (v === undefined || v === null || v === '') return null; const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; }
+
+        function fmtField(label, value) {
+            if (value === undefined || value === null || value === '') return '';
+            return `<dt>${label}</dt><dd>${value}</dd>`;
+        }
+        function renderPropCard(item) {
+            const p = item.prop;
+            const safeAddr = p.address.replace(/'/g, "\\'");
+            const note = getNote(safeAddr);
+            const img = getImg(safeAddr);
+            const thumb = p.streetviewThumbUrl
+                ? `<img class="thumb" src="${p.streetviewThumbUrl}" loading="lazy" alt="Street View">`
+                : `<div style="color:#666;font-style:italic;margin-bottom:10px">No street view image</div>`;
+            const dirsUrl = `https://www.google.com/maps/dir/?api=1&destination=${item.lat},${item.lng}`;
+            const mapsUrl = `https://maps.google.com/?q=${item.lat},${item.lng}`;
+            const score = (p.graffitiScore != null) ? `${(p.graffitiScore*100).toFixed(0)}%` : '—';
+            const zoning = p.zoningDesc ? `${p.zoningClass || ''} — ${p.zoningDesc}`.replace(/^—\s*/, '') : (p.zoningClass || '');
+            const permit = p.permitType ? `${p.permitType} (${p.permitStatus || ''})` : '';
+            const hasStructTxt = p.hasStructure === true ? 'yes' : (p.hasStructure === false ? 'no' : '');
+            return `
+            <div class="prop-card">
+                ${thumb}
+                <dl>
+                    ${fmtField('Status', p.status)}
+                    ${fmtField('Notice date', p.noticeDate)}
+                    ${fmtField('30-day deadline', p.deadline)}
+                    ${fmtField('Days under blight', p.daysUnderBlight)}
+                    ${fmtField('Case count', p.caseCount)}
+                    ${fmtField('Stage', p.stage)}
+                    ${fmtField('Land use', p.landUseDesc)}
+                    ${fmtField('Zoning', zoning)}
+                    ${fmtField('Has structure', hasStructTxt)}
+                    ${fmtField('Last grass cut', p.lastGrassCut)}
+                    ${fmtField('Last permit', permit)}
+                    ${fmtField('Next hearing', p.nextHearing)}
+                    ${fmtField('Graffiti likelihood', score)}
+                </dl>
+                <div class="actions">
+                    <a href="${mapsUrl}" target="_blank" rel="noopener">Open in Maps</a>
+                    <a href="${dirsUrl}" target="_blank" rel="noopener">Directions</a>
+                </div>
+                <textarea class="note-stash" placeholder="Intel stash..." onchange="saveNote('${safeAddr}', this.value)">${note}</textarea>
+                <input type="file" accept="image/*" capture="environment" id="cam2_${safeAddr}" style="display:none;" onchange="captureOptics(event, '${safeAddr}', 'img2_${safeAddr}')">
+                <button onclick="document.getElementById('cam2_${safeAddr}').click()">📸 Optics</button>
+                <img id="img2_${safeAddr}" class="img-preview" src="${img}" style="display:${img ? 'block' : 'none'};max-width:256px;">
+            </div>`;
+        }
 
         function parseSocrataDate(dateStr) {
             if (!dateStr || typeof dateStr !== 'string') return new Date();
@@ -460,7 +508,19 @@
                         let status = (prop.status && prop.status.toLowerCase().includes('guilty')) ? 'Guilty' : 'Uncommitted';
                         const noticeDate = parseSocrataDate(prop.notice_date);
 
-                        masterData.push({ caseno: prop.casenumber, lat: lat, lng: lng, date: noticeDate, prop: { address: prop.address || 'Unknown', status: status, noticeDate: noticeDate.toLocaleDateString(), deadline: new Date(noticeDate.getTime() + 30*24*60*60*1000).toLocaleDateString(), graffitiScore: null, graffitiPanoid: null, graffitiClassifiedAt: null }});
+                        masterData.push({
+                            caseno: prop.casenumber, lat: lat, lng: lng, date: noticeDate,
+                            prop: {
+                                address: prop.address || 'Unknown', status: status,
+                                noticeDate: noticeDate.toLocaleDateString(),
+                                deadline: new Date(noticeDate.getTime() + 30*24*60*60*1000).toLocaleDateString(),
+                                graffitiScore: null, graffitiPanoid: null, graffitiClassifiedAt: null, streetviewThumbUrl: null,
+                                geopin: null, initInspection: null, permitType: null, permitStatus: null, permitFiling: null,
+                                nextHearing: null, stage: null, oc: null, zipcode: null,
+                                zoningClass: null, zoningDesc: null, landUseDesc: null, hasStructure: null,
+                                caseCount: null, earliestCaseDate: null, daysUnderBlight: null, lastGrassCut: null,
+                            }
+                        });
                     });
                     _clusterCountCache = null;
                     filterTimeline();
@@ -491,13 +551,6 @@
                     
                     let noticeDate = parseSocrataDate(noticeDateRaw);
 
-                    const rawScore = row.graffiti_score;
-                    let graffitiScore = null;
-                    if (rawScore !== undefined && rawScore !== null && rawScore !== '') {
-                        const parsed = parseFloat(rawScore);
-                        if (isFinite(parsed)) graffitiScore = parsed;
-                    }
-
                     masterData.push({
                         caseno: caseno,
                         lat: lat,
@@ -508,9 +561,27 @@
                             status: status,
                             noticeDate: noticeDate.toLocaleDateString(),
                             deadline: new Date(noticeDate.getTime() + 30*24*60*60*1000).toLocaleDateString(),
-                            graffitiScore: graffitiScore,
-                            graffitiPanoid: row.graffiti_panoid || null,
-                            graffitiClassifiedAt: row.graffiti_classified_at || null
+                            graffitiScore:        parseFloatOrNull(row.graffiti_score),
+                            graffitiPanoid:       row.graffiti_panoid || null,
+                            graffitiClassifiedAt: row.graffiti_classified_at || null,
+                            streetviewThumbUrl:   row.streetview_thumb_url || null,
+                            geopin:               row.geopin || null,
+                            initInspection:       row.init_inspection || null,
+                            permitType:           row.permit_type || null,
+                            permitStatus:         row.permit_status || null,
+                            permitFiling:         row.permit_filing || null,
+                            nextHearing:          row.next_hearing || null,
+                            stage:                row.stage || null,
+                            oc:                   row.o_c || null,
+                            zipcode:              row.zipcode || null,
+                            zoningClass:          row.zoning_class || null,
+                            zoningDesc:           row.zoning_desc || null,
+                            landUseDesc:          row.land_use_desc || null,
+                            hasStructure:         row.has_structure === 'yes' ? true : (row.has_structure === 'no' ? false : null),
+                            caseCount:            parseIntOrNull(row.case_count),
+                            earliestCaseDate:     row.earliest_case_date || null,
+                            daysUnderBlight:      parseIntOrNull(row.days_under_blight),
+                            lastGrassCut:         row.last_grass_cut || null,
                         }
                     });
                 });
@@ -591,7 +662,14 @@
 
             const listContainer = document.getElementById('blighted-list-content');
             listContainer.innerHTML = visibleBlighted.length > 0
-                ? visibleBlighted.map(item => `<div class="list-item"><strong>${item.prop.address}</strong><br>Deadline: ${item.prop.deadline}</div>`).join('')
+                ? visibleBlighted.map(item => {
+                    const score = item.prop.graffitiScore != null ? `${(item.prop.graffitiScore*100).toFixed(0)}%` : '—';
+                    return `<div class="prop-row" onclick="this.classList.toggle('expanded')">
+                        <strong>${item.prop.address}</strong><br>
+                        <small>Deadline: ${item.prop.deadline} · Score: ${score}</small>
+                        ${renderPropCard(item)}
+                    </div>`;
+                }).join('')
                 : '<p>No blighted properties in view.</p>';
 
             document.getElementById('blighted-modal').style.display = 'block';
