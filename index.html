@@ -671,6 +671,129 @@
           return prop.status === 'Guilty' ? '#ff0000' : '#FFBF00';
         }
 
+        function makePinIcon(emoji, extraClass = '') {
+            return L.divIcon({
+                html: `<div class="user-pin-icon ${extraClass}">${emoji}</div>`,
+                iconSize: [32, 32],
+                iconAnchor: [16, 16],
+                className: '',
+            });
+        }
+
+        function buildPinPopup(pin) {
+            const cat = pinCategoryFor(pin.category);
+            const safeId = pin.id.replace(/'/g, "\\'");
+            const cats = loadPinCategories();
+            const options = cats.map(c =>
+                `<option value="${c.name}" ${c.name === pin.category ? 'selected' : ''}>${c.emoji} ${c.name}</option>`
+            ).join('');
+            const safeTitle = (pin.title || '').replace(/"/g, '&quot;');
+            const safeNote = (pin.note || '').replace(/</g, '&lt;');
+            return `
+                <div class="popup-content" style="min-width: 220px;">
+                    <h3>${cat.emoji} ${pin.category}</h3>
+                    <input type="text" placeholder="Title" value="${safeTitle}" style="width:100%;padding:6px;background:#111;color:#0f0;border:1px solid #444;margin-bottom:6px;font-family:monospace;box-sizing:border-box;" onchange="updatePinField('${safeId}','title',this.value)">
+                    <textarea placeholder="Notes..." style="width:100%;height:60px;background:#111;color:#0f0;border:1px solid #444;padding:6px;font-family:monospace;box-sizing:border-box;" onchange="updatePinField('${safeId}','note',this.value)">${safeNote}</textarea>
+                    <select onchange="updatePinField('${safeId}','category',this.value)" style="width:100%;padding:6px;background:#222;color:#eee;border:1px solid #555;margin-top:6px;">${options}</select>
+                    <button onclick="deletePin('${safeId}')" style="width:100%;padding:6px;background:#900;color:#fff;border:1px solid #f00;border-radius:4px;cursor:pointer;margin-top:6px;">🗑 Delete pin</button>
+                </div>`;
+        }
+
+        function renderUserPins() {
+            userPinsLayer.clearLayers();
+            const pins = loadUserPins();
+            pins.forEach(pin => {
+                const cat = pinCategoryFor(pin.category);
+                const marker = L.marker([pin.lat, pin.lng], { icon: makePinIcon(cat.emoji) });
+                marker.bindPopup(() => buildPinPopup(pin));
+                userPinsLayer.addLayer(marker);
+            });
+        }
+
+        window.updatePinField = function(id, field, value) {
+            const pins = loadUserPins();
+            const idx = pins.findIndex(p => p.id === id);
+            if (idx === -1) return;
+            pins[idx][field] = value;
+            saveUserPins(pins);
+            renderUserPins();
+        };
+
+        window.deletePin = function(id) {
+            const pins = loadUserPins().filter(p => p.id !== id);
+            saveUserPins(pins);
+            renderUserPins();
+            map.closePopup();
+        };
+
+        window.placePin = function(lat, lng, category) {
+            const pins = loadUserPins();
+            pins.push({
+                id: `pin-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+                lat, lng, category, title: '', note: '', created: new Date().toISOString(),
+            });
+            saveUserPins(pins);
+            renderUserPins();
+        };
+
+        function showCategoryMenu(latlng) {
+            const cats = loadPinCategories();
+            const buttons = cats.length > 0
+                ? cats.map(c =>
+                    `<button onclick="placePin(${latlng.lat},${latlng.lng},'${c.name.replace(/'/g, "\\'")}'); map.closePopup();">${c.emoji} ${c.name}</button>`
+                  ).join('')
+                : '<p style="color:#888;margin:0 0 6px 0;">No categories yet — add one below.</p>';
+            L.popup({ closeButton: true, className: '' })
+                .setLatLng(latlng)
+                .setContent(`
+                    <div class="pin-cat-menu">
+                        ${buttons}
+                        <button class="add-new" onclick="addCategoryFromMenu(${latlng.lat},${latlng.lng})">+ New category…</button>
+                        <button class="cancel" onclick="map.closePopup()">Cancel</button>
+                    </div>
+                `)
+                .openOn(map);
+        }
+
+        window.addCategoryFromMenu = function(lat, lng) {
+            const emoji = prompt('Emoji for this category (e.g. 📍):', '📍');
+            if (!emoji) return;
+            const name = prompt('Name for this category:', '');
+            if (!name) return;
+            const cats = loadPinCategories();
+            if (cats.some(c => c.name === name)) { alert('That name is already used.'); return; }
+            cats.push({ emoji: emoji.trim(), name: name.trim() });
+            savePinCategories(cats);
+            map.closePopup();
+            showCategoryMenu(L.latLng(lat, lng));
+        };
+
+        // Long-press triggers `contextmenu` on iOS Safari + Android Chrome.
+        // Desktop right-click also triggers it (acceptable bonus).
+        map.on('contextmenu', e => { showCategoryMenu(e.latlng); });
+
+        // Fallback: manual long-press detector for browsers that don't fire contextmenu on touch.
+        let _lpTimer = null;
+        map.getContainer().addEventListener('touchstart', e => {
+            if (e.touches.length !== 1) return;
+            const t = e.touches[0];
+            const containerRect = map.getContainer().getBoundingClientRect();
+            _lpTimer = setTimeout(() => {
+                const point = map.containerPointToLatLng([
+                    t.clientX - containerRect.left,
+                    t.clientY - containerRect.top,
+                ]);
+                showCategoryMenu(point);
+            }, 600);
+        }, { passive: true });
+        function _cancelLp() { if (_lpTimer) { clearTimeout(_lpTimer); _lpTimer = null; } }
+        ['touchend', 'touchcancel', 'touchmove'].forEach(ev =>
+            map.getContainer().addEventListener(ev, _cancelLp, { passive: true })
+        );
+
+        // Initial render at page load
+        renderUserPins();
+
         function addMarker(lat, lng, property, saveToMaster = true) {
             const isGuilty = property.status === 'Guilty';
             const marker = L.circleMarker([lat, lng], { radius: 8, fillColor: markerColor(property), color: '#fff', weight: 1, fillOpacity: 0.8 });
