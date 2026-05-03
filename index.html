@@ -46,6 +46,17 @@
 
         .list-item { padding: 12px; border-bottom: 1px solid #333; }
         .list-item:last-child { border-bottom: none; }
+
+        .filter-drawer { position: absolute; top: 0; right: -340px; width: 320px; height: 100vh; background: rgba(11,11,11,0.95); border-left: 2px solid #444; z-index: 1100; transition: right 0.25s; padding: 16px; overflow-y: auto; box-sizing: border-box; color: #eee; font-family: monospace; font-size: 13px; }
+        .filter-drawer.open { right: 0; }
+        .filter-section { margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid #333; }
+        .filter-section h4 { color: #FFBF00; margin: 0 0 6px 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+        .chip-group { display: flex; gap: 4px; flex-wrap: wrap; }
+        .chip { padding: 4px 8px; border: 1px solid #555; border-radius: 12px; background: #222; cursor: pointer; user-select: none; font-size: 12px; }
+        .chip.active { background: #007bff; border-color: #0056b3; color: #fff; }
+        .filter-drawer input[type=range] { width: 100%; }
+        .filter-drawer select { width: 100%; padding: 6px; background: #222; color: #eee; border: 1px solid #555; border-radius: 4px; }
+        #filter-toggle-btn { z-index: 1101; }
     </style>
 </head>
 <body>
@@ -100,6 +111,7 @@
     </div>
 
     <div class="hud-controls">
+        <button id="filter-toggle-btn" class="hud-btn" onclick="document.getElementById('filter-drawer').classList.toggle('open')">FILTERS</button>
         <button id="graffiti-filter-btn" class="hud-btn" onclick="cycleGraffitiFilter()">🎨 Graffiti: All</button>
         <button id="graffiti-color-btn" class="hud-btn" onclick="cycleColorMode()">🎨 Color: Status</button>
         <button id="blighted-list-btn" class="hud-btn" onclick="showBlightedList()">📋 LIST BLIGHTED</button>
@@ -109,6 +121,72 @@
         <button id="net-btn" class="hud-btn" onclick="generateQR()">🕸️ Beam Intel</button>
         <button id="gps-toggle" class="hud-btn">📍 Track GPS</button>
         <button id="ghost-btn" class="hud-btn" onclick="ghostProtocol()">⚠️ GHOST</button>
+    </div>
+
+    <div id="filter-drawer" class="filter-drawer">
+        <div class="filter-section">
+            <h4>Preset</h4>
+            <select id="preset-select" onchange="applyPreset(this.value)">
+                <option value="all">All properties</option>
+                <option value="fresh">Fresh canvases</option>
+                <option value="cluster">Cluster bombs</option>
+                <option value="solo">Solo targets</option>
+                <option value="repeat">Repeat offenders</option>
+                <option value="long-term">Long-term abandoned</option>
+                <option value="expiring">About to expire</option>
+            </select>
+        </div>
+        <div class="filter-section">
+            <h4>Property type</h4>
+            <div class="chip-group" id="filter-types">
+                <span class="chip active" data-type="residential">Residential</span>
+                <span class="chip active" data-type="commercial">Commercial</span>
+                <span class="chip active" data-type="mixed">Mixed-use</span>
+                <span class="chip active" data-type="vacant">Vacant lot</span>
+            </div>
+        </div>
+        <div class="filter-section">
+            <h4>Deadline window</h4>
+            <div class="chip-group" id="filter-deadline">
+                <span class="chip active" data-win="all">All</span>
+                <span class="chip" data-win="<7">&lt;7d</span>
+                <span class="chip" data-win="7-14">7-14d</span>
+                <span class="chip" data-win=">14">&gt;14d</span>
+                <span class="chip" data-win="expired">Expired</span>
+            </div>
+        </div>
+        <div class="filter-section">
+            <h4>Has structure</h4>
+            <div class="chip-group" id="filter-structure">
+                <span class="chip" data-struct="yes">Yes</span>
+                <span class="chip" data-struct="no">No</span>
+                <span class="chip active" data-struct="both">Both</span>
+            </div>
+        </div>
+        <div class="filter-section">
+            <h4>Days under blight (min)</h4>
+            <input type="range" id="filter-days-blighted" min="0" max="3650" step="30" value="0">
+            <small id="filter-days-blighted-label">&ge; 0 days</small>
+        </div>
+        <div class="filter-section">
+            <h4><label><input type="checkbox" id="filter-repeat"> Repeat offender (&ge;2 cases)</label></h4>
+        </div>
+        <div class="filter-section">
+            <h4>Active rehab</h4>
+            <div class="chip-group" id="filter-rehab">
+                <span class="chip" data-rehab="exclude">Exclude</span>
+                <span class="chip active" data-rehab="all">All</span>
+                <span class="chip" data-rehab="only">Only</span>
+            </div>
+        </div>
+        <div class="filter-section">
+            <h4>Cluster</h4>
+            <div class="chip-group" id="filter-cluster">
+                <span class="chip" data-cluster="solo">Solo</span>
+                <span class="chip" data-cluster="cluster">Cluster</span>
+                <span class="chip active" data-cluster="all">All</span>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -126,6 +204,16 @@
         let masterData = [];
         let graffitiFilter = 'all'; // 'all' | 'graffiti' | 'clean'
         let colorMode = 'status';   // 'status' | 'graffiti' (used by G4)
+        const filterState = {
+            monthsBack: 0,
+            deadlineWindow: 'all',
+            propertyTypes: new Set(['residential', 'commercial', 'mixed', 'vacant']),
+            hasStructure: 'both',
+            daysBlightedMin: 0,
+            repeatOnly: false,
+            activeRehab: 'all',
+            cluster: 'all',
+        };
         let syncQueue = new Set();
         const syncUI = document.getElementById('sync-status');
         
@@ -268,25 +356,95 @@
 
         window.filterTimeline = function() {
             const slider = document.getElementById('time-slider');
-            const monthsBack = 12 - parseInt(slider.value);
-            document.getElementById('time-label').innerText = monthsBack === 0 ? "⏳ Timeline: ALL TIME" : `⏳ Timeline: PAST ${parseInt(slider.value)} MONTHS`;
-            
-            const cutoffDate = new Date();
-            cutoffDate.setMonth(cutoffDate.getMonth() - parseInt(slider.value));
-
-            guiltyLayer.clearLayers(); uncommittedLayer.clearLayers();
-            let activeHeat = [];
-
-            masterData.forEach(item => {
-                const timelineOk = (monthsBack === 0 || item.date >= cutoffDate);
-                const graffitiOk = shouldShowByGraffiti(item.prop);
-                if(timelineOk && graffitiOk) {
-                    activeHeat.push([item.lat, item.lng]);
-                    addMarker(item.lat, item.lng, item.prop, false);
-                }
-            });
-            heatLayer.setLatLngs(activeHeat);
+            filterState.monthsBack = 12 - parseInt(slider.value, 10);
+            document.getElementById('time-label').innerText = filterState.monthsBack === 0
+                ? "⏳ Timeline: ALL TIME"
+                : `⏳ Timeline: PAST ${parseInt(slider.value, 10)} MONTHS`;
+            applyFilters();
         };
+
+        function propertyCategory(p) {
+            const desc = ((p.landUseDesc || '') + ' ' + (p.zoningDesc || '')).toLowerCase();
+            if (p.hasStructure === false) return 'vacant';
+            if (desc.includes('commercial')) return 'commercial';
+            if (desc.includes('mixed')) return 'mixed';
+            return 'residential';
+        }
+        function isActiveRehab(p) {
+            if (!p.permitStatus || !p.permitFiling) return false;
+            if (String(p.permitStatus).toLowerCase() !== 'permit issued') return false;
+            const d = parseSocrataDate(p.permitFiling);
+            const ageDays = (Date.now() - d.getTime()) / 86400000;
+            return ageDays < 365 && /build|reno|repair/i.test(p.permitType || '');
+        }
+        function inDeadlineWindow(p, win) {
+            if (win === 'all') return true;
+            if (!p.deadline) return false;
+            const days = (new Date(p.deadline).getTime() - Date.now()) / 86400000;
+            if (win === 'expired') return days < 0;
+            if (win === '<7') return days >= 0 && days < 7;
+            if (win === '7-14') return days >= 7 && days <= 14;
+            if (win === '>14') return days > 14;
+            return true;
+        }
+        function haversineMeters(lat1, lng1, lat2, lng2) {
+            const R = 6371000; const toRad = x => x * Math.PI / 180;
+            const dLat = toRad(lat2 - lat1); const dLng = toRad(lng2 - lng1);
+            const a = Math.sin(dLat/2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2) ** 2;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        }
+        let _clusterCountCache = null;
+        function ensureClusterCounts() {
+            if (_clusterCountCache) return;
+            console.time('clusterCounts');
+            _clusterCountCache = new Map();
+            for (let i = 0; i < masterData.length; i++) {
+                let count = 0;
+                for (let j = 0; j < masterData.length; j++) {
+                    if (i === j) continue;
+                    if (haversineMeters(masterData[i].lat, masterData[i].lng,
+                                        masterData[j].lat, masterData[j].lng) <= 100) count++;
+                }
+                _clusterCountCache.set(masterData[i].caseno, count);
+            }
+            console.timeEnd('clusterCounts');
+        }
+        function inClusterBucket(item, bucket) {
+            if (bucket === 'all') return true;
+            ensureClusterCounts();
+            const n = _clusterCountCache.get(item.caseno) || 0;
+            if (bucket === 'solo') return n === 0;
+            if (bucket === 'cluster') return n >= 3;
+            return true;
+        }
+
+        function applyFilters() {
+            guiltyLayer.clearLayers(); uncommittedLayer.clearLayers();
+            const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - filterState.monthsBack);
+            const heat = [];
+            masterData.forEach(item => {
+                const p = item.prop;
+                if (filterState.monthsBack > 0 && item.date < cutoff) return;
+                if (!shouldShowByGraffiti(p)) return;
+                if (!filterState.propertyTypes.has(propertyCategory(p))) return;
+                if (filterState.hasStructure !== 'both') {
+                    const want = filterState.hasStructure === 'yes';
+                    if ((p.hasStructure === true) !== want) return;
+                }
+                if ((p.daysUnderBlight || 0) < filterState.daysBlightedMin) return;
+                if (filterState.repeatOnly && (p.caseCount || 1) < 2) return;
+                if (filterState.activeRehab !== 'all') {
+                    const rehab = isActiveRehab(p);
+                    if (filterState.activeRehab === 'exclude' && rehab) return;
+                    if (filterState.activeRehab === 'only' && !rehab) return;
+                }
+                if (!inDeadlineWindow(p, filterState.deadlineWindow)) return;
+                if (!inClusterBucket(item, filterState.cluster)) return;
+                heat.push([item.lat, item.lng]);
+                addMarker(item.lat, item.lng, p, false);
+            });
+            heatLayer.setLatLngs(heat);
+        }
 
         async function fetchSectorData() {
             if (PROXY_URL === 'PLACEHOLDER_PROXY_URL') {
@@ -304,6 +462,7 @@
 
                         masterData.push({ caseno: prop.casenumber, lat: lat, lng: lng, date: noticeDate, prop: { address: prop.address || 'Unknown', status: status, noticeDate: noticeDate.toLocaleDateString(), deadline: new Date(noticeDate.getTime() + 30*24*60*60*1000).toLocaleDateString(), graffitiScore: null, graffitiPanoid: null, graffitiClassifiedAt: null }});
                     });
+                    _clusterCountCache = null;
                     filterTimeline();
                 } catch (error) { console.error("Signal Lost", error); }
                 return;
@@ -355,6 +514,7 @@
                         }
                     });
                 });
+                _clusterCountCache = null;
                 filterTimeline();
             } catch (error) { console.error("Signal Lost", error); }
         }
@@ -439,6 +599,77 @@
 
         window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); dPrompt = e; document.getElementById('install-btn').style.display = 'block'; });
         document.getElementById('install-btn').addEventListener('click', async () => { if (dPrompt) { dPrompt.prompt(); await dPrompt.userChoice; document.getElementById('install-btn').style.display = 'none'; dPrompt = null; } });
+
+        document.querySelectorAll('.chip-group').forEach(group => {
+            group.addEventListener('click', e => {
+                const t = e.target.closest('.chip'); if (!t) return;
+                if (group.id === 'filter-types') {
+                    t.classList.toggle('active');
+                    filterState.propertyTypes = new Set(
+                        [...group.querySelectorAll('.chip.active')].map(c => c.dataset.type)
+                    );
+                } else {
+                    group.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+                    t.classList.add('active');
+                    if (group.id === 'filter-deadline') filterState.deadlineWindow = t.dataset.win;
+                    if (group.id === 'filter-structure') filterState.hasStructure = t.dataset.struct;
+                    if (group.id === 'filter-rehab') filterState.activeRehab = t.dataset.rehab;
+                    if (group.id === 'filter-cluster') filterState.cluster = t.dataset.cluster;
+                }
+                applyFilters();
+            });
+        });
+        document.getElementById('filter-days-blighted').addEventListener('input', e => {
+            filterState.daysBlightedMin = parseInt(e.target.value, 10);
+            document.getElementById('filter-days-blighted-label').textContent = `>= ${filterState.daysBlightedMin} days`;
+            applyFilters();
+        });
+        document.getElementById('filter-repeat').addEventListener('change', e => {
+            filterState.repeatOnly = e.target.checked; applyFilters();
+        });
+
+        const PRESETS = {
+            all: {},
+            fresh: { hasStructure: 'yes', deadlineWindow: '>14', activeRehab: 'exclude' },
+            cluster: { cluster: 'cluster' },
+            solo: { cluster: 'solo' },
+            repeat: { repeatOnly: true },
+            'long-term': { daysBlightedMin: 365, activeRehab: 'exclude' },
+            expiring: { deadlineWindow: '<7' },
+        };
+        window.applyPreset = function(name) {
+            const baseline = {
+                monthsBack: filterState.monthsBack,
+                deadlineWindow: 'all',
+                propertyTypes: new Set(['residential','commercial','mixed','vacant']),
+                hasStructure: 'both',
+                daysBlightedMin: 0,
+                repeatOnly: false,
+                activeRehab: 'all',
+                cluster: 'all',
+            };
+            Object.assign(filterState, baseline, PRESETS[name] || {});
+            syncDrawerControlsFromState();
+            applyFilters();
+        };
+        function syncDrawerControlsFromState() {
+            const update = (sel, attr, value) => {
+                document.querySelectorAll(sel + ' .chip').forEach(c => {
+                    c.classList.toggle('active', c.dataset[attr] === value);
+                });
+            };
+            update('#filter-deadline', 'win', filterState.deadlineWindow);
+            update('#filter-structure', 'struct', filterState.hasStructure);
+            update('#filter-rehab', 'rehab', filterState.activeRehab);
+            update('#filter-cluster', 'cluster', filterState.cluster);
+            document.querySelectorAll('#filter-types .chip').forEach(c => {
+                c.classList.toggle('active', filterState.propertyTypes.has(c.dataset.type));
+            });
+            document.getElementById('filter-days-blighted').value = filterState.daysBlightedMin;
+            document.getElementById('filter-days-blighted-label').textContent = `>= ${filterState.daysBlightedMin} days`;
+            document.getElementById('filter-repeat').checked = filterState.repeatOnly;
+        }
+
         if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
     </script>
 </body>
