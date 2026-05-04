@@ -80,6 +80,7 @@
         /* User pins — emoji markers */
         .user-pin-icon { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-size: 22px; background: rgba(11,11,11,0.85); border: 2px solid #FFBF00; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.6); }
         .user-pin-icon.hotspot { border-color: #ff44aa; animation: pinPulse 1.6s ease-in-out infinite; }
+        .user-pin-icon.demo { border-color: #ff44aa; }
         @keyframes pinPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(255,68,170,0.6); } 50% { box-shadow: 0 0 0 8px rgba(255,68,170,0); } }
         .pin-cat-menu { display: flex; flex-direction: column; gap: 4px; min-width: 200px; }
         .pin-cat-menu button { width: 100%; padding: 8px; background: #222; color: #eee; border: 1px solid #444; border-radius: 4px; cursor: pointer; font-size: 14px; text-align: left; }
@@ -232,6 +233,21 @@
                 <span class="chip active" data-cluster="all">All</span>
             </div>
         </div>
+        <div class="filter-section">
+            <h4>Demolition</h4>
+            <div class="chip-group" id="filter-demo">
+                <span class="chip active" data-demo="all">All</span>
+                <span class="chip" data-demo="pending">Pending</span>
+                <span class="chip" data-demo="permitted">Permitted</span>
+                <span class="chip" data-demo="completed">Completed</span>
+                <span class="chip" data-demo="none">None</span>
+            </div>
+        </div>
+        <div class="filter-section">
+            <h4>Recent permits (min in 365d)</h4>
+            <input type="range" id="filter-permits" min="0" max="10" step="1" value="0">
+            <small id="filter-permits-label">&ge; 0 permits</small>
+        </div>
         <div class="filter-actions">
             <button id="filter-reset-btn" onclick="applyPreset('all'); document.getElementById('preset-select').value='all';">Reset</button>
             <button id="filter-apply-btn" onclick="applyFilters(); document.getElementById('filter-drawer').classList.remove('open');">Apply &amp; Close</button>
@@ -250,6 +266,7 @@
         const heatLayer = L.heatLayer([], { radius: 25, blur: 15, maxZoom: 17 }).addTo(map);
         const userPinsLayer = L.layerGroup().addTo(map);
         const hotspotLayer = L.layerGroup();
+        const demolitionsLayer = L.layerGroup();
         L.control.layers(
             { "Tactical Dark": darkMap, "Satellite": satelliteMap },
             {
@@ -258,6 +275,7 @@
                 "🔥 Heatmap": heatLayer,
                 "📍 My pins": userPinsLayer,
                 "🎨 Hotspots (auto)": hotspotLayer,
+                "🏗️ Demolitions": demolitionsLayer,
             },
             { position: 'topright', collapsed: false }
         ).addTo(map);
@@ -304,6 +322,8 @@
             repeatOnly: false,
             activeRehab: 'all',
             cluster: 'all',
+            demoStatus: 'all',
+            permitsMin: 0,
         };
         let syncQueue = new Set();
         const syncUI = document.getElementById('sync-status');
@@ -456,6 +476,8 @@
             const zoning = p.zoningDesc ? `${p.zoningClass || ''} — ${p.zoningDesc}`.replace(/^—\s*/, '') : (p.zoningClass || '');
             const permit = p.permitType ? `${p.permitType} (${p.permitStatus || ''})` : '';
             const hasStructTxt = p.hasStructure === true ? 'yes' : (p.hasStructure === false ? 'no' : '');
+            const demoText = p.demolitionStatus ? `${p.demolitionStatus}${p.demolitionDate ? ` (${p.demolitionDate})` : ''}` : '';
+            const permits365 = p.permitCount365d != null ? `${p.permitCount365d} in last year${p.permitTypesRecent ? ` — ${p.permitTypesRecent}` : ''}` : '';
             return `
             <div class="prop-card">
                 ${thumb}
@@ -472,6 +494,8 @@
                     ${fmtField('Last grass cut', p.lastGrassCut)}
                     ${fmtField('Last permit', permit)}
                     ${fmtField('Next hearing', p.nextHearing)}
+                    ${fmtField('Demolition', demoText)}
+                    ${fmtField('Recent permits', permits365)}
                     ${fmtField('Graffiti likelihood', score)}
                 </dl>
                 <div class="actions">
@@ -578,6 +602,11 @@
                 }
                 if (!inDeadlineWindow(p, filterState.deadlineWindow)) return;
                 if (!inClusterBucket(item, filterState.cluster)) return;
+                if (filterState.demoStatus !== 'all') {
+                    const ds = p.demolitionStatus || 'none';
+                    if (ds !== filterState.demoStatus) return;
+                }
+                if ((p.permitCount365d || 0) < filterState.permitsMin) return;
                 heat.push([item.lat, item.lng]);
                 addMarker(item.lat, item.lng, p, false);
             });
@@ -627,6 +656,7 @@
                                 nextHearing: null, stage: null, oc: null, zipcode: null,
                                 zoningClass: null, zoningDesc: null, landUseDesc: null, hasStructure: null,
                                 caseCount: null, earliestCaseDate: null, daysUnderBlight: null, lastGrassCut: null,
+                                demolitionStatus: null, demolitionDate: null, permitCount365d: null, permitTypesRecent: null,
                             }
                         });
                     });
@@ -690,6 +720,10 @@
                             earliestCaseDate:     row.earliest_case_date || null,
                             daysUnderBlight:      parseIntOrNull(row.days_under_blight),
                             lastGrassCut:         row.last_grass_cut || null,
+                            demolitionStatus:     row.demolition_status || null,
+                            demolitionDate:       row.demolition_date || null,
+                            permitCount365d:      parseIntOrNull(row.permit_count_365d),
+                            permitTypesRecent:    row.permit_types_recent || null,
                         }
                     });
                 });
@@ -975,6 +1009,7 @@
                     if (group.id === 'filter-structure') filterState.hasStructure = t.dataset.struct;
                     if (group.id === 'filter-rehab') filterState.activeRehab = t.dataset.rehab;
                     if (group.id === 'filter-cluster') filterState.cluster = t.dataset.cluster;
+                    if (group.id === 'filter-demo') filterState.demoStatus = t.dataset.demo;
                 }
                 applyFilters();
             });
@@ -986,6 +1021,11 @@
         });
         document.getElementById('filter-repeat').addEventListener('change', e => {
             filterState.repeatOnly = e.target.checked; applyFilters();
+        });
+        document.getElementById('filter-permits').addEventListener('input', e => {
+            filterState.permitsMin = parseInt(e.target.value, 10);
+            document.getElementById('filter-permits-label').textContent = `>= ${filterState.permitsMin} permits`;
+            applyFilters();
         });
 
         const PRESETS = {
@@ -1007,6 +1047,8 @@
                 repeatOnly: false,
                 activeRehab: 'all',
                 cluster: 'all',
+                demoStatus: 'all',
+                permitsMin: 0,
             };
             Object.assign(filterState, baseline, PRESETS[name] || {});
             syncDrawerControlsFromState();
@@ -1022,12 +1064,43 @@
             update('#filter-structure', 'struct', filterState.hasStructure);
             update('#filter-rehab', 'rehab', filterState.activeRehab);
             update('#filter-cluster', 'cluster', filterState.cluster);
+            update('#filter-demo', 'demo', filterState.demoStatus);
             document.querySelectorAll('#filter-types .chip').forEach(c => {
                 c.classList.toggle('active', filterState.propertyTypes.has(c.dataset.type));
             });
             document.getElementById('filter-days-blighted').value = filterState.daysBlightedMin;
             document.getElementById('filter-days-blighted-label').textContent = `>= ${filterState.daysBlightedMin} days`;
             document.getElementById('filter-repeat').checked = filterState.repeatOnly;
+            document.getElementById('filter-permits').value = filterState.permitsMin;
+            document.getElementById('filter-permits-label').textContent = `>= ${filterState.permitsMin} permits`;
+        }
+
+        let _demoLoaded = false;
+        map.on('overlayadd', async (e) => {
+            if (e.layer === demolitionsLayer && !_demoLoaded) {
+                _demoLoaded = true;
+                await loadDemolitions();
+            }
+        });
+        async function loadDemolitions() {
+            if (PROXY_URL === 'PLACEHOLDER_PROXY_URL') {
+                console.warn('PROXY_URL not set; demolitions layer will be empty.');
+                return;
+            }
+            try {
+                const r = await fetch(`${PROXY_URL}?tab=demolitions`);
+                const rows = await r.json();
+                if (!Array.isArray(rows)) { console.warn('demolitions: unexpected response', rows); return; }
+                rows.forEach(d => {
+                    const lat = parseFloat(d.lat), lng = parseFloat(d.lng);
+                    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+                    const m = L.marker([lat, lng], { icon: makePinIcon('🏗️', 'demo') });
+                    m.bindPopup(`<div class="popup-content"><h3>🏗️ Demolition</h3><p><b>Status:</b> ${d.status || ''}</p><p><b>Date:</b> ${d.event_date || ''}</p><p><b>Address:</b> ${d.address || ''}</p>${d.permit_no ? `<p><b>Permit:</b> ${d.permit_no}</p>` : ''}</div>`);
+                    demolitionsLayer.addLayer(m);
+                });
+            } catch (err) {
+                console.error('Failed to load demolitions:', err);
+            }
         }
 
         if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
