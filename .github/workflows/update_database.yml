@@ -37,6 +37,20 @@ jobs:
           ENRICH_MIN_INTERVAL_S: '1.0'
         run: python -m scripts.enrich_properties || echo "enrichment failed; continuing"
 
+      - name: Ingest demolitions (best-effort)
+        if: success()
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.SHEETS_API }}
+        run: python -m scripts.ingest_demolitions || echo "demolition ingest failed; continuing"
+
+      - name: Ingest permits (best-effort)
+        if: success()
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.SHEETS_API }}
+          PERMITS_MIN_INTERVAL_S: '0.5'
+          PERMITS_MAX_PER_RUN: '100'
+        run: python -m scripts.ingest_permits || echo "permits ingest failed; continuing"
+
       - name: Classify graffiti (best-effort)
         if: success()
         env:

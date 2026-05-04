@@ -47,6 +47,8 @@ Each address is enriched from NOLA Socrata cross-datasets and visual classificat
 * **Days under blight, case count, repeat-offender flag** (full case history from Code Enforcement)
 * **Active-rehab signal** (recent permit type + status from the Code Enforcement record)
 * **Last grass-cutting case** (Lot Abatement Chapter 66 — overgrowth proxy)
+* **Demolition lifecycle** (BlightStatus Demolitions + Permit Apps Demolition rows): pending / permitted / completed
+* **Recent permit history** (Building Permits 2018+ joined by `geopin`): permit count in last 365 days + most recent 5 permit types
 * **Graffiti likelihood** (Street View tile + EfficientNet-B0 ONNX classifier)
 * **Street View thumbnail** (cached in a public Google Drive folder)
 
