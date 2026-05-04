@@ -51,6 +51,12 @@ jobs:
           PERMITS_MAX_PER_RUN: '100'
         run: python -m scripts.ingest_permits || echo "permits ingest failed; continuing"
 
+      - name: Ingest OSM features (best-effort)
+        if: success()
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.SHEETS_API }}
+        run: python -m scripts.ingest_osm || echo "OSM ingest failed; continuing"
+
       - name: Classify graffiti (best-effort)
         if: success()
         env:
