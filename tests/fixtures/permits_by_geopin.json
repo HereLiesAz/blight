@@ -1,0 +1,6 @@
+[
+  {"applicationnumber": "25-100", "permittype": "Renovation", "applicationdate": "2025-12-01T00:00:00.000"},
+  {"applicationnumber": "25-080", "permittype": "Mechanical HVAC", "applicationdate": "2025-08-15T00:00:00.000"},
+  {"applicationnumber": "24-300", "permittype": "Electrical", "applicationdate": "2024-11-20T00:00:00.000"},
+  {"applicationnumber": "20-005", "permittype": "Renovation", "applicationdate": "2020-03-01T00:00:00.000"}
+]
