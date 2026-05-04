@@ -47,3 +47,15 @@ def ensure_enrichment_columns(header_row: list[str]) -> list[str]:
 def row_needs_enrichment(row: dict) -> bool:
     """True if the property has not been enriched (zoning fields blank)."""
     return not row.get("zoning_class") and not row.get("zoning_desc") and not row.get("land_use_desc")
+
+
+DEMOLITION_COLUMNS = ("demolition_status", "demolition_date")
+PERMIT_HISTORY_COLUMNS = ("permit_count_365d", "permit_types_recent")
+
+
+def ensure_demolition_columns(header_row: list[str]) -> list[str]:
+    out = list(header_row)
+    for col in DEMOLITION_COLUMNS + PERMIT_HISTORY_COLUMNS:
+        if col not in out:
+            out.append(col)
+    return out
