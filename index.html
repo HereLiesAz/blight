@@ -83,6 +83,7 @@
         .user-pin-icon.demo { border-color: #ff44aa; }
         .user-pin-icon.cluster-center { border-color: #ff0000; width: 40px; height: 40px; font-size: 26px; }
         .user-pin-icon.outlier { border-color: #66ccff; width: 24px; height: 24px; font-size: 14px; }
+        .user-pin-icon.osm { border-color: #888888; width: 24px; height: 24px; font-size: 14px; }
         @keyframes pinPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(255,68,170,0.6); } 50% { box-shadow: 0 0 0 8px rgba(255,68,170,0); } }
         .pin-cat-menu { display: flex; flex-direction: column; gap: 4px; min-width: 200px; }
         .pin-cat-menu button { width: 100%; padding: 8px; background: #222; color: #eee; border: 1px solid #444; border-radius: 4px; cursor: pointer; font-size: 14px; text-align: left; }
@@ -271,6 +272,7 @@
         const demolitionsLayer = L.layerGroup();
         const clusterCentersLayer = L.layerGroup();
         const outliersLayer = L.layerGroup();
+        const osmLayer = L.layerGroup();
         L.control.layers(
             { "Tactical Dark": darkMap, "Satellite": satelliteMap },
             {
@@ -282,6 +284,7 @@
                 "🏗️ Demolitions": demolitionsLayer,
                 "🎯 Cluster centers (auto)": clusterCentersLayer,
                 "⊙ Solo outliers (auto)": outliersLayer,
+                "🏚️ OSM features (auto)": osmLayer,
             },
             { position: 'topright', collapsed: false }
         ).addTo(map);
@@ -1139,13 +1142,39 @@
             document.getElementById('filter-permits-label').textContent = `>= ${filterState.permitsMin} permits`;
         }
 
-        let _demoLoaded = false;
+        let _demoLoaded = false, _osmLoaded = false;
         map.on('overlayadd', async (e) => {
             if (e.layer === demolitionsLayer && !_demoLoaded) {
                 _demoLoaded = true;
                 await loadDemolitions();
             }
+            if (e.layer === osmLayer && !_osmLoaded) {
+                _osmLoaded = true;
+                await loadOsmFeatures();
+            }
         });
+        const OSM_CATEGORY_EMOJI = { abandoned: '🏚️', ruins: '🏛️', disused: '🚧', brownfield: '🏭', other: '📍' };
+        async function loadOsmFeatures() {
+            if (PROXY_URL === 'PLACEHOLDER_PROXY_URL') {
+                console.warn('PROXY_URL not set; OSM layer will be empty.');
+                return;
+            }
+            try {
+                const r = await fetch(`${PROXY_URL}?tab=osm_features`);
+                const rows = await r.json();
+                if (!Array.isArray(rows)) { console.warn('osm_features: unexpected response', rows); return; }
+                rows.forEach(d => {
+                    const lat = parseFloat(d.lat), lng = parseFloat(d.lng);
+                    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+                    const emoji = OSM_CATEGORY_EMOJI[d.category] || '📍';
+                    const m = L.marker([lat, lng], { icon: makePinIcon(emoji, 'osm') });
+                    m.bindPopup(`<div class="popup-content"><h3>${emoji} ${d.category || 'OSM feature'}</h3>${d.name ? `<p><b>Name:</b> ${d.name}</p>` : ''}<p><b>OSM:</b> ${d.id || ''}</p>${d.tags_summary ? `<p><small>${d.tags_summary}</small></p>` : ''}</div>`);
+                    osmLayer.addLayer(m);
+                });
+            } catch (err) {
+                console.error('Failed to load OSM features:', err);
+            }
+        }
         async function loadDemolitions() {
             if (PROXY_URL === 'PLACEHOLDER_PROXY_URL') {
                 console.warn('PROXY_URL not set; demolitions layer will be empty.');

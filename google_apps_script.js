@@ -116,57 +116,89 @@ function doPost(e) {
   }
 }
 
+function _normalizeHeader(label) {
+  return label.toString().toLowerCase().trim().replace(/\s+/g, '_');
+}
+
+function _readTab(sheet) {
+  const data = sheet.getDataRange().getValues();
+  if (data.length === 0) return [];
+  const headers = data[0].map(_normalizeHeader);
+  const rows = [];
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    let any = false;
+    const obj = {};
+    headers.forEach((h, j) => {
+      const v = row[j];
+      if (v !== '' && v !== null && v !== undefined) any = true;
+      obj[h] = v;
+    });
+    if (any) rows.push(obj);
+  }
+  return rows;
+}
+
 function doGet(e) {
   try {
-    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheets()[0];
-    const data = sheet.getDataRange().getValues();
+    const tabName = (e && e.parameter && e.parameter.tab) ? e.parameter.tab : '';
+    const book = SpreadsheetApp.openById(SPREADSHEET_ID);
 
+    if (tabName) {
+      // Side-tab response: return raw header-keyed rows.
+      let ws = null;
+      try { ws = book.getSheetByName(tabName); } catch (_) {}
+      if (!ws) {
+        return ContentService.createTextOutput(JSON.stringify([]))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+      return ContentService.createTextOutput(JSON.stringify(_readTab(ws)))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Main tab: keep backward-compatible field aliases AND surface every column
+    // by normalized header name so the frontend can pick up new enrichment fields
+    // without further proxy changes.
+    const sheet = book.getSheets()[0];
+    const data = sheet.getDataRange().getValues();
     if (data.length === 0) {
       return ContentService.createTextOutput(JSON.stringify([]))
         .setMimeType(ContentService.MimeType.JSON);
     }
+    const headers = data[0].map(_normalizeHeader);
+    const idxOf = (name) => headers.indexOf(name);
 
-    // Process headers
-    const headers = data[0].map(h => h.toString().toLowerCase().trim());
-
-    // Find column indices dynamically based on the requested schema
-    let colIndices = { casenumber: -1, address: -1, status: -1, notice_date: -1, lat: -1, lng: -1, deadline: -1 };
-
-    headers.forEach((label, index) => {
-        if (label.includes('case number') || label.includes('casenumber')) colIndices.casenumber = index;
-        else if (label.includes('address')) colIndices.address = index;
-        else if (label.includes('features') || label.includes('status')) colIndices.status = index;
-        else if (label.includes('notice date')) colIndices.notice_date = index;
-        else if (label.includes('deadline')) colIndices.deadline = index;
-        else if (label.includes('latitude') || label === 'lat') colIndices.lat = index;
-        else if (label.includes('longitude') || label === 'lng') colIndices.lng = index;
+    // Backward-compat field aliases
+    const aliases = {
+      casenumber: ['case_number', 'casenumber'],
+      address: ['address'],
+      status: ['features_&_2026_status', 'status'],
+      notice_date: ['notice_date'],
+      deadline: ['deadline'],
+      lat: ['latitude', 'lat'],
+      lng: ['longitude', 'lng'],
+    };
+    const aliasIdx = {};
+    Object.keys(aliases).forEach(k => {
+      for (const h of aliases[k]) {
+        const i = idxOf(h);
+        if (i >= 0) { aliasIdx[k] = i; break; }
+      }
     });
 
-    // Fallback indices if headers are missing (matching the 11-column setup)
-    if (colIndices.address === -1) colIndices.address = 0;
-    if (colIndices.status === -1) colIndices.status = 3;
-    if (colIndices.casenumber === -1) colIndices.casenumber = 6;
-    if (colIndices.notice_date === -1) colIndices.notice_date = 7;
-    if (colIndices.deadline === -1) colIndices.deadline = 8;
-    if (colIndices.lat === -1) colIndices.lat = 9;
-    if (colIndices.lng === -1) colIndices.lng = 10;
-
     const result = [];
-
-    // Skip header row
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
-      if (!row[colIndices.casenumber] && !row[colIndices.lat]) continue; // Skip empty rows
+      const cn = aliasIdx.casenumber !== undefined ? row[aliasIdx.casenumber] : '';
+      const lt = aliasIdx.lat !== undefined ? row[aliasIdx.lat] : '';
+      if (!cn && !lt) continue; // skip empty rows
 
-      result.push({
-        casenumber: row[colIndices.casenumber],
-        address: row[colIndices.address],
-        status: row[colIndices.status],
-        notice_date: row[colIndices.notice_date],
-        deadline: row[colIndices.deadline],
-        lat: row[colIndices.lat],
-        lng: row[colIndices.lng]
-      });
+      const obj = {};
+      // Every column → its lowercased/underscored header name
+      headers.forEach((h, j) => { obj[h] = row[j]; });
+      // Plus the legacy aliases for backward compatibility
+      Object.keys(aliasIdx).forEach(k => { obj[k] = row[aliasIdx[k]]; });
+      result.push(obj);
     }
 
     return ContentService.createTextOutput(JSON.stringify(result))
