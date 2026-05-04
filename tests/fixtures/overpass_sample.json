@@ -1,0 +1,10 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API",
+  "elements": [
+    {"type": "node", "id": 12345, "lat": 29.964, "lon": -90.007, "tags": {"abandoned": "yes", "name": "Old Mill"}},
+    {"type": "way", "id": 67890, "center": {"lat": 29.97, "lon": -90.02}, "tags": {"building": "ruins"}},
+    {"type": "way", "id": 11111, "center": {"lat": 29.95, "lon": -90.05}, "tags": {"landuse": "brownfield"}},
+    {"type": "way", "id": 22222, "tags": {"building": "ruins"}}
+  ]
+}
