@@ -81,6 +81,8 @@
         .user-pin-icon { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-size: 22px; background: rgba(11,11,11,0.85); border: 2px solid #FFBF00; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.6); }
         .user-pin-icon.hotspot { border-color: #ff44aa; animation: pinPulse 1.6s ease-in-out infinite; }
         .user-pin-icon.demo { border-color: #ff44aa; }
+        .user-pin-icon.cluster-center { border-color: #ff0000; width: 40px; height: 40px; font-size: 26px; }
+        .user-pin-icon.outlier { border-color: #66ccff; width: 24px; height: 24px; font-size: 14px; }
         @keyframes pinPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(255,68,170,0.6); } 50% { box-shadow: 0 0 0 8px rgba(255,68,170,0); } }
         .pin-cat-menu { display: flex; flex-direction: column; gap: 4px; min-width: 200px; }
         .pin-cat-menu button { width: 100%; padding: 8px; background: #222; color: #eee; border: 1px solid #444; border-radius: 4px; cursor: pointer; font-size: 14px; text-align: left; }
@@ -267,6 +269,8 @@
         const userPinsLayer = L.layerGroup().addTo(map);
         const hotspotLayer = L.layerGroup();
         const demolitionsLayer = L.layerGroup();
+        const clusterCentersLayer = L.layerGroup();
+        const outliersLayer = L.layerGroup();
         L.control.layers(
             { "Tactical Dark": darkMap, "Satellite": satelliteMap },
             {
@@ -276,6 +280,8 @@
                 "📍 My pins": userPinsLayer,
                 "🎨 Hotspots (auto)": hotspotLayer,
                 "🏗️ Demolitions": demolitionsLayer,
+                "🎯 Cluster centers (auto)": clusterCentersLayer,
+                "⊙ Solo outliers (auto)": outliersLayer,
             },
             { position: 'topright', collapsed: false }
         ).addTo(map);
@@ -612,6 +618,64 @@
             });
             heatLayer.setLatLngs(heat);
             renderHotspots();
+            renderClusterCenters();
+            renderOutliers();
+        }
+
+        const CLUSTER_RADIUS_M = 100;
+        const MIN_CLUSTER_SIZE = 3;
+        let _clusterGroupsCache = null;
+
+        function ensureClusterGroups() {
+            if (_clusterGroupsCache) return _clusterGroupsCache;
+            const visited = new Set();
+            const groups = [];
+            for (let i = 0; i < masterData.length; i++) {
+                if (visited.has(i)) continue;
+                const queue = [i];
+                const group = [];
+                while (queue.length) {
+                    const k = queue.shift();
+                    if (visited.has(k)) continue;
+                    visited.add(k);
+                    group.push(k);
+                    for (let j = 0; j < masterData.length; j++) {
+                        if (visited.has(j)) continue;
+                        if (haversineMeters(masterData[k].lat, masterData[k].lng,
+                                            masterData[j].lat, masterData[j].lng) <= CLUSTER_RADIUS_M) {
+                            queue.push(j);
+                        }
+                    }
+                }
+                if (group.length >= MIN_CLUSTER_SIZE) groups.push(group);
+            }
+            _clusterGroupsCache = groups;
+            return groups;
+        }
+
+        function renderClusterCenters() {
+            clusterCentersLayer.clearLayers();
+            const groups = ensureClusterGroups();
+            groups.forEach(grp => {
+                let sLat = 0, sLng = 0;
+                grp.forEach(idx => { sLat += masterData[idx].lat; sLng += masterData[idx].lng; });
+                const lat = sLat / grp.length, lng = sLng / grp.length;
+                const m = L.marker([lat, lng], { icon: makePinIcon('🎯', 'cluster-center') });
+                m.bindPopup(`<div class="popup-content"><h3>🎯 Cluster center</h3><p><b>Properties in cluster:</b> ${grp.length}</p><p><b>Within ${CLUSTER_RADIUS_M}m radius</b></p></div>`);
+                clusterCentersLayer.addLayer(m);
+            });
+        }
+
+        function renderOutliers() {
+            outliersLayer.clearLayers();
+            ensureClusterCounts();
+            masterData.forEach(item => {
+                const n = _clusterCountCache.get(item.caseno) || 0;
+                if (n !== 0) return;
+                const m = L.marker([item.lat, item.lng], { icon: makePinIcon('⊙', 'outlier') });
+                m.bindPopup(`<div class="popup-content"><h3>⊙ Solo property</h3><p><b>Address:</b> ${item.prop.address}</p><p>No other blighted properties within ${CLUSTER_RADIUS_M}m</p></div>`);
+                outliersLayer.addLayer(m);
+            });
         }
 
         const HOTSPOT_THRESHOLD = 0.8;
@@ -660,7 +724,7 @@
                             }
                         });
                     });
-                    _clusterCountCache = null;
+                    _clusterCountCache = null; _clusterGroupsCache = null;
                     filterTimeline();
                 } catch (error) { console.error("Signal Lost", error); }
                 return;
@@ -727,7 +791,7 @@
                         }
                     });
                 });
-                _clusterCountCache = null;
+                _clusterCountCache = null; _clusterGroupsCache = null;
                 filterTimeline();
             } catch (error) { console.error("Signal Lost", error); }
         }
