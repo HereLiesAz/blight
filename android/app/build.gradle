@@ -1,0 +1,64 @@
+plugins {
+    id 'com.android.application'
+    id 'kotlin-android'
+}
+
+import java.util.Properties
+
+def versionPropsFile = project.rootProject.file("version.properties")
+def versionProps = new Properties()
+if (versionPropsFile.exists()) {
+    versionProps.load(new FileInputStream(versionPropsFile))
+}
+
+def currentVersionCode = (versionProps.getProperty("versionBuild", "1")).toInteger()
+def isReleaseBuild = gradle.startParameter.taskNames.any { it.toLowerCase().contains("release") }
+if (isReleaseBuild) {
+    currentVersionCode++
+    versionProps.setProperty("versionBuild", currentVersionCode.toString())
+    versionProps.store(new FileOutputStream(versionPropsFile), null)
+}
+def verMajor = versionProps.getProperty("versionMajor", "1")
+def verMinor = versionProps.getProperty("versionMinor", "0")
+def verPatch = versionProps.getProperty("versionPatch", "0")
+def currentVersionName = "${verMajor}.${verMinor}.${verPatch}"
+
+
+android {
+    namespace 'com.example.ninthwardcanvas'
+    compileSdk 33
+
+    defaultConfig {
+        applicationId "com.example.ninthwardcanvas"
+        minSdk 24
+        targetSdk 33
+        versionCode currentVersionCode
+        versionName currentVersionName
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.9.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.8.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+}
