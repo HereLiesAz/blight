@@ -6,9 +6,9 @@ import json
 import sys
 import traceback
 from datetime import datetime, timedelta, timezone
+from scripts.lib.sheet import SPREADSHEET_ID
 
 # Constants
-SPREADSHEET_ID = '1O5zIhogpzmZLRn36X1Rt6cZUkWeYb2dzUgBTQszq_oE'
 SOCRATA_ENDPOINT = 'https://data.nola.gov/resource/gjzc-adg8.json'
 # Filtering by bounds rather than neighborhood since 'neighborhood' column doesn't exist
 # We will use the same bounding box filtering as the frontend does:
