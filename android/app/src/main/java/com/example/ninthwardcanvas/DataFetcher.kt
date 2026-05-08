@@ -162,7 +162,8 @@ class DataFetcher {
              override fun onResponse(call: Call, response: Response) {
                  try {
                      val type = object : TypeToken<List<DemolitionRow>>() {}.type
-                     val rows: List<DemolitionRow> = gson.fromJson(response.body?.string(), type)
+                     val bodyString = response.body?.string()
+                     val rows: List<DemolitionRow> = if (!bodyString.isNullOrEmpty()) gson.fromJson(bodyString, type) else emptyList()
                      mainHandler.post { onSuccess(rows) }
                  } catch (e: Exception) { mainHandler.post { onSuccess(emptyList()) } }
              }
