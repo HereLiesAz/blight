@@ -6,3 +6,7 @@ models/*.pt
 .cache/
 tests/fixtures/*.onnx
 .pytest_cache/
+android/
+android/app/build/
+android/.gradle/
+android/local.properties
