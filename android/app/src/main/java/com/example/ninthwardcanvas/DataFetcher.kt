@@ -162,8 +162,7 @@ class DataFetcher {
              override fun onResponse(call: Call, response: Response) {
                  try {
                      val type = object : TypeToken<List<DemolitionRow>>() {}.type
-                     val bodyString = response.body?.string()
-                     val rows: List<DemolitionRow> = if (!bodyString.isNullOrEmpty()) gson.fromJson(bodyString, type) else emptyList()
+                     val rows: List<DemolitionRow> = gson.fromJson(response.body?.string(), type)
                      mainHandler.post { onSuccess(rows) }
                  } catch (e: Exception) { mainHandler.post { onSuccess(emptyList()) } }
              }
@@ -181,8 +180,7 @@ class DataFetcher {
              override fun onResponse(call: Call, response: Response) {
                  try {
                      val type = object : TypeToken<List<OsmFeatureRow>>() {}.type
-                     val bodyString = response.body?.string()
-                     val rows: List<OsmFeatureRow> = if (!bodyString.isNullOrEmpty()) gson.fromJson(bodyString, type) else emptyList()
+                     val rows: List<OsmFeatureRow> = gson.fromJson(response.body?.string(), type)
                      mainHandler.post { onSuccess(rows) }
                  } catch (e: Exception) { mainHandler.post { onSuccess(emptyList()) } }
              }
