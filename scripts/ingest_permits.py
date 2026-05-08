@@ -12,9 +12,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 from scripts.lib.permits import fetch_permits_for_geopin, summarize_permits
-from scripts.lib.sheet import ensure_demolition_columns
-
-SPREADSHEET_ID = '1O5zIhogpzmZLRn36X1Rt6cZUkWeYb2dzUgBTQszq_oE'
+from scripts.lib.sheet import ensure_demolition_columns, SPREADSHEET_ID
 MIN_INTERVAL_S = float(os.environ.get("PERMITS_MIN_INTERVAL_S", "0.5"))
 MAX_PER_RUN = int(os.environ.get("PERMITS_MAX_PER_RUN", "100"))
 

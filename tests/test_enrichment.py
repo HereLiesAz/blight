@@ -6,6 +6,7 @@ import re
 import responses
 
 from scripts.lib.enrichment import (
+    _normalize_date,
     days_under_blight,
     fetch_case_history,
     fetch_footprint,
@@ -129,3 +130,11 @@ def test_fetch_land_use_returns_flu_desc():
         status=200,
     )
     assert fetch_land_use(29.96, -90.01) == "Residential Single-Family"
+
+
+def test_normalize_date():
+    assert _normalize_date("") == ""
+    assert _normalize_date("2023-01-01T00:00:00") == "2023-01-01T00:00:00"
+    assert _normalize_date("20170411000000.000") == "2017-04-11T00:00:00"
+    assert _normalize_date("20170411") == "2017-04-11T00:00:00"
+    assert _normalize_date("not-a-date") == "not-a-date"
