@@ -16,9 +16,7 @@ from google.oauth2.service_account import Credentials
 from scripts.lib.demolitions import (
     fetch_completed_demolitions, fetch_demolition_permits, _LIFECYCLE_RANK,
 )
-from scripts.lib.sheet import ensure_demolition_columns
-
-SPREADSHEET_ID = '1O5zIhogpzmZLRn36X1Rt6cZUkWeYb2dzUgBTQszq_oE'
+from scripts.lib.sheet import ensure_demolition_columns, SPREADSHEET_ID
 DEMO_TAB_HEADER = ["id", "address", "geopin", "lat", "lng", "status", "event_date", "source", "permit_no"]
 
 
