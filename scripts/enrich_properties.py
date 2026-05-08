@@ -20,9 +20,8 @@ from scripts.lib.enrichment import (
 )
 from scripts.lib.sheet import (
     ENRICHMENT_COLUMNS, ensure_enrichment_columns, row_needs_enrichment,
+    SPREADSHEET_ID,
 )
-
-SPREADSHEET_ID = '1O5zIhogpzmZLRn36X1Rt6cZUkWeYb2dzUgBTQszq_oE'
 MIN_INTERVAL_S = float(os.environ.get("ENRICH_MIN_INTERVAL_S", "1.0"))
 MAX_PER_RUN = int(os.environ.get("ENRICH_MAX_PER_RUN", "300"))
 

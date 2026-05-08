@@ -13,8 +13,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 from scripts.lib.osm import fetch_features
-
-SPREADSHEET_ID = '1O5zIhogpzmZLRn36X1Rt6cZUkWeYb2dzUgBTQszq_oE'
+from scripts.lib.sheet import SPREADSHEET_ID
 TAB_NAME = 'osm_features'
 TAB_HEADER = ["id", "osm_type", "category", "lat", "lng", "name", "tags_summary"]
 

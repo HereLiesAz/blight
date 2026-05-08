@@ -18,10 +18,10 @@ from google.oauth2.service_account import Credentials
 
 from scripts.lib.streetview import ScraperSession, PanoramaNotFound
 from scripts.lib.inference import GraffitiClassifier
-from scripts.lib.sheet import GRAFFITI_COLUMNS, ensure_columns, row_needs_classification
+from scripts.lib.sheet import (
+    GRAFFITI_COLUMNS, ensure_columns, row_needs_classification, SPREADSHEET_ID,
+)
 from scripts.lib.drive_uploader import DriveUploader, compress_thumbnail
-
-SPREADSHEET_ID = '1O5zIhogpzmZLRn36X1Rt6cZUkWeYb2dzUgBTQszq_oE'
 DEFAULT_MODEL = pathlib.Path('models/model.onnx')
 MAX_AGE_DAYS = int(os.environ.get("GRAFFITI_MAX_AGE_DAYS", "30"))
 MAX_PER_RUN = int(os.environ.get("GRAFFITI_MAX_PER_RUN", "200"))
