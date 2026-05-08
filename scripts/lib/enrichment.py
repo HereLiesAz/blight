@@ -17,7 +17,13 @@ def _socrata_get(view_id: str, params: dict, timeout: float = 15.0) -> list:
     return r.json()
 
 
+def _escape_soql(s: str) -> str:
+    """Escape single quotes for SoQL by doubling them."""
+    return s.replace("'", "''")
+
+
 def fetch_zoning(geopin: str) -> dict:
+    geopin = _escape_soql(geopin)
     rows = _socrata_get("cym7-cw5z", {"$where": f"geopin='{geopin}'", "$limit": "1"})
     if not rows:
         return {"zoning_class": "", "zoning_desc": ""}
@@ -28,6 +34,7 @@ def fetch_zoning(geopin: str) -> dict:
 
 
 def fetch_footprint(geopin: str) -> bool:
+    geopin = _escape_soql(geopin)
     rows = _socrata_get(
         "prh5-qsuf",
         {"$where": f"geopin='{geopin}' AND activestatus=1", "$limit": "1"},
@@ -36,6 +43,7 @@ def fetch_footprint(geopin: str) -> bool:
 
 
 def fetch_case_history(geopin: str) -> dict:
+    geopin = _escape_soql(geopin)
     rows = _socrata_get(
         "gjzc-adg8",
         {
@@ -54,6 +62,7 @@ def fetch_case_history(geopin: str) -> dict:
 
 
 def fetch_last_grass_cut(address: str) -> str:
+    address = _escape_soql(address)
     rows = _socrata_get(
         "xhih-vxs6",
         {
