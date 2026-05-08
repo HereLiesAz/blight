@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import datetime
+import os
+
+SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "1O5zIhogpzmZLRn36X1Rt6cZUkWeYb2dzUgBTQszq_oE")
 
 GRAFFITI_COLUMNS = ("graffiti_score", "graffiti_panoid", "graffiti_classified_at", "streetview_thumb_url")
 
