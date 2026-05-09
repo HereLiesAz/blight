@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="250dp"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/rounded_bg_dark"
+    android:padding="12dp">
+
+    <TextView
+        android:id="@+id/pin_info_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="#FFFFFF"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="8dp"/>
+
+    <EditText
+        android:id="@+id/pin_edit_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Title"
+        android:textColorHint="#888888"
+        android:textColor="#00FF00"
+        android:background="#111111"
+        android:padding="8dp"
+        android:textSize="14sp"
+        android:fontFamily="monospace"
+        android:layout_marginBottom="6dp"/>
+
+    <EditText
+        android:id="@+id/pin_edit_note"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:hint="Notes..."
+        android:textColorHint="#888888"
+        android:textColor="#00FF00"
+        android:background="#111111"
+        android:gravity="top|start"
+        android:padding="8dp"
+        android:textSize="14sp"
+        android:fontFamily="monospace"
+        android:layout_marginBottom="6dp"/>
+
+    <Spinner
+        android:id="@+id/pin_spinner_category"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/spinner_bg"
+        android:padding="8dp"
+        android:layout_marginBottom="6dp"/>
+
+    <Button
+        android:id="@+id/pin_btn_delete"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="🗑 Delete pin"
+        android:backgroundTint="#990000"
+        android:textColor="#FFFFFF"/>
+
+</LinearLayout>
