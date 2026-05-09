@@ -1,13 +1,13 @@
-# 🎨 Blight
+# 🎨 Red Blight District
 
-Welcome to **Blight**, a mobile-first mapping tool designed for street artists and graffiti writers.
+Welcome to **Red Blight District**, a mobile-first mapping tool designed for street artists and graffiti writers.
 
 This app allows you to explore abandoned properties, view legal "burn" windows, analyze blight trends, and plan artistic interventions or community revitalization efforts—all from a fully native, high-performance Android experience.
 
 ---
 
 ## 🎯 What is it?
-Blight pulls real-time and enriched open data from the City of New Orleans (NOLA Open Data/Socrata) to provide a rich, interactive map of blighted and uncommitted properties.
+Red Blight District pulls real-time and enriched open data from the City of New Orleans (NOLA Open Data/Socrata) to provide a rich, interactive map of blighted and uncommitted properties.
 
 It acts as a digital scout, helping you identify "Fresh Canvases", avoid "Repeat Offenders," and analyze spatial patterns like clusters of abandonment.
 
