@@ -661,4 +661,14 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
         mapView.onPause()
     }
+
+    override fun onResume() {
+        super.onResume()
+        mapView.onResume()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        mapView.onPause()
+    }
 }

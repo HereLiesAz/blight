@@ -47,6 +47,12 @@ jobs:
           KEYSTORE_CHAIN: ${{ secrets.KEYSTORE_CHAIN }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEYSTORE_OWNER: ${{ secrets.KEYSTORE_OWNER }}
+          KEYSTORE_SHA1: ${{ secrets.KEYSTORE_SHA1 }}
+          KEYSTORE_SHA256: ${{ secrets.KEYSTORE_SHA256 }}
+          KEYSTORE_PUBLIC: ${{ secrets.KEYSTORE_PUBLIC }}
+          KEYSTORE_RSA: ${{ secrets.KEYSTORE_RSA }}
         run: |
           echo "Generating keystore from certificate chain and private key..."
 
@@ -78,12 +84,11 @@ jobs:
           distribution: 'temurin'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v3
         env:
           FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         with:
           cache-read-only: false
-          dependency-graph: disabled
 
       - name: Grant execute permission for gradlew
         run: cd android && chmod +x gradlew
