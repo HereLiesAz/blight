@@ -1,6 +1,6 @@
 # 🎨 Red Blight District
 
-Welcome to **Red Blight District**, a mobile-first mapping tool designed for street artists and graffiti writers.
+Welcome to the **Red Blight District**, a mobile-first mapping tool designed for street artists and graffiti writers.
 
 This app allows you to explore abandoned properties, view legal "burn" windows, analyze blight trends, and plan artistic interventions or community revitalization efforts—all from a fully native, high-performance Android experience.
 
