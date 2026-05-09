@@ -629,6 +629,17 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+        currentCaptureAddress = null
+    }
+
+    override fun onResume() {
+        super.onResume()
+        mapView.onResume()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        mapView.onPause()
     }
 
     override fun onResume() {
