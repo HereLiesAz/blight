@@ -35,17 +35,21 @@ class MapManager(private val context: Context, private val mapView: MapView) {
             style = Paint.Style.FILL
             alpha = 150 // Adjust transparency
         }
+        private val point = Point()
 
         override fun draw(canvas: Canvas?, mapView: MapView?, shadow: Boolean) {
             if (canvas == null || mapView == null || shadow || heatPoints.isEmpty()) return
             val projection = mapView.projection
-            val point = Point()
+            val zoomLevel = projection.zoomLevel.toFloat()
+            val radius = 50f * zoomLevel / 15f // Scale with zoom
 
-            // Simple heatmap approximation drawing blurred circles
+            val bounds = mapView.boundingBox
+
             for (geoPoint in heatPoints) {
+                // Optimize drawing by checking bounds
+                if (!bounds.contains(geoPoint.latitude, geoPoint.longitude)) continue
+
                 projection.toPixels(geoPoint, point)
-                val zoomLevel = projection.zoomLevel.toFloat()
-                val radius = 50f * zoomLevel / 15f // Scale with zoom
                 val gradient = RadialGradient(
                     point.x.toFloat(), point.y.toFloat(), radius,
                     intArrayOf(Color.argb(200, 255, 0, 0), Color.argb(100, 255, 255, 0), Color.TRANSPARENT),

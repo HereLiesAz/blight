@@ -5,10 +5,18 @@ import android.content.SharedPreferences
 import android.util.Base64
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class StorageManager(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("NinthWardCanvasPrefs", Context.MODE_PRIVATE)
     private val gson = Gson()
+
+    private val scope = CoroutineScope(Dispatchers.IO)
+    private val debounceJobs = mutableMapOf<String, Job>()
 
     companion object {
         val DEFAULT_PIN_CATEGORIES = listOf(
@@ -60,8 +68,13 @@ class StorageManager(context: Context) {
     }
 
     fun saveNote(address: String, note: String) {
-        val b64 = Base64.encodeToString(note.toByteArray(), Base64.NO_WRAP)
-        prefs.edit().putString("txt_$address", b64).apply()
+        val key = "txt_$address"
+        debounceJobs[key]?.cancel()
+        debounceJobs[key] = scope.launch {
+            delay(500)
+            val b64 = Base64.encodeToString(note.toByteArray(), Base64.NO_WRAP)
+            prefs.edit().putString(key, b64).commit()
+        }
     }
 
     fun getImgPath(address: String): String {

@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.activity.result.contract.ActivityResultContracts
 import android.view.View
 import android.widget.Button
 import android.widget.CheckBox
@@ -78,10 +79,22 @@ class MainActivity : AppCompatActivity() {
     private var graffitiFilterMode = "all" // all, graffiti, clean
     private var colorMode = "status" // status, graffiti
     private var currentPhotoPath: String? = null
+    private var currentCaptureAddress: String? = null
+
+    private val takePictureLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            currentPhotoPath?.let { path ->
+                currentCaptureAddress?.let { address ->
+                    storageManager.saveImgPath(address, "file:$path")
+                    Toast.makeText(this, "Optics saved", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        currentCaptureAddress = null
+    }
 
     companion object {
         private const val REQUEST_PERMISSIONS = 1
-        private const val REQUEST_IMAGE_CAPTURE = 2
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -602,8 +615,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private var currentCaptureAddress: String? = null
-
     private fun dispatchTakePictureIntent(address: String) {
         currentCaptureAddress = address
         Intent(MediaStore.ACTION_IMAGE_CAPTURE).also { takePictureIntent ->
@@ -614,24 +625,21 @@ class MainActivity : AppCompatActivity() {
                 photoFile?.also {
                     val photoURI: Uri = FileProvider.getUriForFile(this, "${applicationContext.packageName}.provider", it)
                     takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoURI)
-                    startActivityForResult(takePictureIntent, REQUEST_IMAGE_CAPTURE)
-                }
-            }
-        }
-    }
-
-    @Deprecated("Deprecated in Java")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQUEST_IMAGE_CAPTURE && resultCode == Activity.RESULT_OK) {
-            currentPhotoPath?.let { path ->
-                currentCaptureAddress?.let { address ->
-                    storageManager.saveImgPath(address, "file:$path")
-                    Toast.makeText(this, "Optics saved", Toast.LENGTH_SHORT).show()
+                    takePictureLauncher.launch(takePictureIntent)
                 }
             }
         }
         currentCaptureAddress = null
+    }
+
+    override fun onResume() {
+        super.onResume()
+        mapView.onResume()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        mapView.onPause()
     }
 
     override fun onResume() {

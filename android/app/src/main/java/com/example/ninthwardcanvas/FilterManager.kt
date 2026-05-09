@@ -77,12 +77,14 @@ class FilterManager {
         return "residential"
     }
 
+    private val rehabRegex = "(?i)build|reno|repair".toRegex()
+
     private fun isActiveRehab(p: PropInfo): Boolean {
         if (p.permitStatus == null || p.permitFiling == null) return false
         if (p.permitStatus.lowercase() != "permit issued") return false
         val d = parseSocrataDate(p.permitFiling)
         val ageDays = (System.currentTimeMillis() - d.time) / 86400000.0
-        return ageDays < 365 && "(?i)build|reno|repair".toRegex().containsMatchIn(p.permitType ?: "")
+        return ageDays < 365 && rehabRegex.containsMatchIn(p.permitType ?: "")
     }
 
     private fun inDeadlineWindow(p: PropInfo, win: String): Boolean {
