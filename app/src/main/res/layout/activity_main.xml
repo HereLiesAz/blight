@@ -173,7 +173,7 @@
         android:layout_height="match_parent"
         android:layout_gravity="end"
         android:background="#f20b0b0b"
-        android:theme="@style/Theme.NinthWardCanvas">
+        android:theme="@style/Theme.RedBlightDistrict">
 
         <ScrollView
             android:layout_width="match_parent"

@@ -25,13 +25,13 @@ def currentVersionName = "${verMajor}.${verMinor}.${verPatch}"
 
 
 android {
-    namespace 'com.example.ninthwardcanvas'
-    compileSdk 34
+    namespace 'com.hereliesaz.redblightdistrict'
+    compileSdk 37
 
     defaultConfig {
-        applicationId "com.example.ninthwardcanvas"
+        applicationId "com.hereliesaz.redblightdistrict"
         minSdk 24
-        targetSdk 34
+        targetSdk 37
         versionCode currentVersionCode
         versionName currentVersionName
 
