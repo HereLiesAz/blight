@@ -22,7 +22,7 @@ jobs:
           submodules: true
 
       - name: Setup Dependencies
-        run: cd android && chmod +x setup_libs.sh && ./setup_libs.sh
+        run: chmod +x setup_libs.sh && ./setup_libs.sh
 
       - name: Inject Google Services
         env:
@@ -91,7 +91,7 @@ jobs:
           cache-read-only: false
 
       - name: Grant execute permission for gradlew
-        run: cd android && chmod +x gradlew
+        run: chmod +x gradlew
 
       - name: Build with Gradle
         id: gradle-build
