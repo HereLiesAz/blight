@@ -1,4 +1,4 @@
-package com.example.ninthwardcanvas
+package com.hereliesaz.redblightdistrict
 
 import android.content.Context
 import android.content.SharedPreferences
