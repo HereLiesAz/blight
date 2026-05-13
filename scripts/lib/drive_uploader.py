@@ -32,14 +32,30 @@ class DriveUploader:
         from googleapiclient.discovery import build
         self._drive = build('drive', 'v3', credentials=credentials, cache_discovery=False)
         self.folder_id = folder_id
+        self._cache: dict[str, str] = {}
+        self._populate_cache()
+
+    def _populate_cache(self):
+        """Build a cache of existing {name: id} in the folder."""
+        page_token = None
+        q = f"'{self.folder_id}' in parents and trashed = false"
+        while True:
+            results = self._drive.files().list(
+                q=q,
+                fields="nextPageToken, files(id, name)",
+                pageToken=page_token
+            ).execute()
+            for f in results.get('files', []):
+                self._cache[f['name']] = f['id']
+            page_token = results.get('nextPageToken')
+            if not page_token:
+                break
 
     def upload(self, panoid: str, jpeg_bytes: bytes) -> str:
         """Upload (or reuse) <panoid>.jpg in the folder; return public URL."""
         name = f"{panoid}.jpg"
-        q = f"'{self.folder_id}' in parents and name = '{name}' and trashed = false"
-        found = self._drive.files().list(q=q, fields="files(id)").execute().get('files', [])
-        if found:
-            return public_url_for_id(found[0]['id'])
+        if name in self._cache:
+            return public_url_for_id(self._cache[name])
 
         from googleapiclient.http import MediaIoBaseUpload
         media = MediaIoBaseUpload(io.BytesIO(jpeg_bytes), mimetype='image/jpeg')
@@ -53,4 +69,5 @@ class DriveUploader:
             fileId=file_id,
             body={'type': 'anyone', 'role': 'reader'},
         ).execute()
+        self._cache[name] = file_id
         return public_url_for_id(file_id)
