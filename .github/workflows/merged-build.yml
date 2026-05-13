@@ -31,15 +31,15 @@ jobs:
           CLIENT_ID: ${{ secrets.CLIENT_ID }}
           ARCORE_API_KEY: ${{ secrets.ARCORE_API_KEY }}
         run: |
-          if [ -f "android/android/android/app/google-services.json.template" ]; then
+          if [ -f "app/google-services.json.template" ]; then
             echo "Template found. Injecting secrets..."
-            sed -e 's/{{\([^}]*\)}}/${\1}/g' android/android/app/google-services.json.template | envsubst > android/app/google-services.json
+            sed -e 's/{{\([^}]*\)}}/${\1}/g' app/google-services.json.template | envsubst > app/google-services.json
           else
             echo "Warning: google-services.json.template not found. Skipping injection."
           fi
 
           # Inject ARCore API Key into local.properties for build.gradle.kts to pick up
-          echo "ARCORE_API_KEY=$ARCORE_API_KEY" >> android/local.properties
+          echo "ARCORE_API_KEY=$ARCORE_API_KEY" >> local.properties
 
       - name: Generate Keystore from Secrets
         env:
@@ -67,12 +67,12 @@ jobs:
 
           # Convert the PKCS12 file to a JKS keystore
           keytool -importkeystore -srckeystore keystore.p12 -srcstoretype PKCS12 \
-            -destkeystore android/app/keystore.jks -deststoretype JKS \
+            -destkeystore app/keystore.jks -deststoretype JKS \
             -srcstorepass "$KEYSTORE_PASSWORD" \
             -deststorepass "$KEYSTORE_PASSWORD" \
             -alias "$KEY_ALIAS" -noprompt || true
 
-          echo "Keystore generated successfully at android/app/keystore.jks"
+          echo "Keystore generated successfully at app/keystore.jks"
 
           # Clean up temporary files
           rm -f private_key.pem certificate_chain.crt keystore.p12
@@ -105,7 +105,7 @@ jobs:
           export BUILD_NUMBER=$(git rev-list --count HEAD)
 
           # Build the APK
-          cd android && ./gradlew assembleDebug -PversionBuild=$BUILD_NUMBER --build-cache \
+          ./gradlew assembleDebug -PversionBuild=$BUILD_NUMBER --build-cache \
             -Pandroid.injected.signing.store.file=$(pwd)/app/keystore.jks \
             -Pandroid.injected.signing.store.password=$KEYSTORE_PASSWORD \
             -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
@@ -122,7 +122,7 @@ jobs:
           script: |
             const fs = require('fs');
             let logTail = 'Log file not found.';
-            try { logTail = fs.readFileSync('android/build.log', 'utf8').slice(-4000); } catch (e) {}
+            try { logTail = fs.readFileSync('build.log', 'utf8').slice(-4000); } catch (e) {}
 
             const assignee = 'gemini-code-assist';
 
@@ -157,33 +157,33 @@ jobs:
 
           # Extract version info from properties file
 
-          MAJOR=$(grep 'versionMajor=' android/version.properties | cut -d'=' -f2 | tr -d '\r ')
-          MINOR=$(grep 'versionMinor=' android/version.properties | cut -d'=' -f2 | tr -d '\r ')
+          MAJOR=$(grep 'versionMajor=' version.properties | cut -d'=' -f2 | tr -d '\r ')
+          MINOR=$(grep 'versionMinor=' version.properties | cut -d'=' -f2 | tr -d '\r ')
 
           # Calculate Patch version programmatically based on commits since Minor update
-          MINOR_COMMIT=$(git blame -L '/versionMinor=/',+1 android/version.properties | awk '{print $1}' | tr -d '^')
+          MINOR_COMMIT=$(git blame -L '/versionMinor=/',+1 version.properties | awk '{print $1}' | tr -d '^')
           if [ -n "$MINOR_COMMIT" ]; then
             PATCH=$(git rev-list --count $MINOR_COMMIT..HEAD)
           else
 
-            PATCH=$(grep 'versionPatch=' android/version.properties | cut -d'=' -f2 | tr -d '\r ')
+            PATCH=$(grep 'versionPatch=' version.properties | cut -d'=' -f2 | tr -d '\r ')
           fi
 
           VERSION_NAME="$MAJOR.$MINOR.$PATCH.$BUILD_NUMBER"
 
           TAG_NAME="latest-debug-v${MAJOR}.${MINOR}"
 
-          # Dynamic App Name from android/settings.gradle
-          if [ -f "android/settings.gradle.kts" ]; then
-             APP_NAME=$(grep 'rootProject.name' android/settings.gradle.kts | sed -E "s/.*=.*[\"'](.*)[\"']/\1/")
-          elif [ -f "android/settings.gradle" ]; then
-             APP_NAME=$(grep 'rootProject.name' android/settings.gradle | sed -E "s/.*=.*[\"'](.*)[\"']/\1/")
+          # Dynamic App Name from settings.gradle
+          if [ -f "settings.gradle.kts" ]; then
+             APP_NAME=$(grep 'rootProject.name' settings.gradle.kts | sed -E "s/.*=.*[\"'](.*)[\"']/\1/")
+          elif [ -f "settings.gradle" ]; then
+             APP_NAME=$(grep 'rootProject.name' settings.gradle | sed -E "s/.*=.*[\"'](.*)[\"']/\1/")
           else
              APP_NAME="App"
           fi
 
           # Locate built APK
-          APK_ORIGINAL=$(find android/app/build/outputs/apk/debug -name "*.apk" | head -n 1)
+          APK_ORIGINAL=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
 
           if [ -z "$APK_ORIGINAL" ]; then
              echo "Error: No APK found to release!"
@@ -200,8 +200,8 @@ jobs:
 
           # Package Build Tools (Optional)
           mkdir -p build_tools_package/tools build_tools_package/native
-          [ -d "android/app/src/main/assets/tools" ] && cp -r android/app/src/main/assets/tools/* build_tools_package/tools/ || true
-          [ -d "android/app/src/main/jniLibs/arm64-v8a" ] && cp -r android/app/src/main/jniLibs/arm64-v8a/* build_tools_package/native/ || true
+          [ -d "app/src/main/assets/tools" ] && cp -r app/src/main/assets/tools/* build_tools_package/tools/ || true
+          [ -d "app/src/main/jniLibs/arm64-v8a" ] && cp -r app/src/main/jniLibs/arm64-v8a/* build_tools_package/native/ || true
           cd build_tools_package && zip -r ../build-tools.zip . && cd ..
 
       - name: Publish Release
