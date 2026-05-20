@@ -81,6 +81,9 @@ class MainActivity : AppCompatActivity() {
     private var currentPhotoPath: String? = null
     private var currentCaptureAddress: String? = null
 
+    // ALPR (DeFlock) cache, deduped by OSM id so panning doesn't redraw duplicates.
+    private val alprCache = mutableMapOf<String, AlprPoint>()
+
     private val takePictureLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             currentPhotoPath?.let { path ->
@@ -313,6 +316,18 @@ class MainActivity : AppCompatActivity() {
             findViewById<TextView>(R.id.loading_text).visibility = View.GONE
             Toast.makeText(this, "Fetch error: ${it.message}", Toast.LENGTH_SHORT).show()
         })
+
+        fetchAlprForCurrentView()
+    }
+
+    private fun fetchAlprForCurrentView() {
+        dataFetcher.fetchAlprPoints(mapView.boundingBox, { points ->
+            var added = 0
+            for (p in points) {
+                if (alprCache.put(p.id, p) == null) added++
+            }
+            if (added > 0) applyFilters()
+        }, { /* silent: ALPR layer is best-effort */ })
     }
 
     private fun applyFilters() {
@@ -371,6 +386,11 @@ class MainActivity : AppCompatActivity() {
             if (filterManager.getClusterCountFor(item.caseno) == 0) {
                  mapManager.outliersLayer.add(mapManager.createEmojiMarker(item.lat, item.lng, "⊙", "Solo Outlier"))
             }
+        }
+
+        // ALPR markers (DeFlock dataset, OSM-backed)
+        for (alpr in alprCache.values) {
+            mapManager.alprLayer.add(mapManager.createAlprMarker(alpr))
         }
 
         mapView.invalidate()
@@ -600,6 +620,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun ghostProtocol() {
         storageManager.clearAll()
+        alprCache.clear()
         if (locationOverlay.isMyLocationEnabled) locationOverlay.disableMyLocation()
         finish()
         startActivity(intent)

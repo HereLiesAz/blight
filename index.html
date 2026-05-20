@@ -273,6 +273,7 @@
         const clusterCentersLayer = L.layerGroup();
         const outliersLayer = L.layerGroup();
         const osmLayer = L.layerGroup();
+        const alprLayer = L.layerGroup();
         L.control.layers(
             { "Tactical Dark": darkMap, "Satellite": satelliteMap },
             {
@@ -285,6 +286,7 @@
                 "🎯 Cluster centers (auto)": clusterCentersLayer,
                 "⊙ Solo outliers (auto)": outliersLayer,
                 "🏚️ OSM features (auto)": osmLayer,
+                "<span style='color: #00E5FF;'>📷 ALPR cameras (DeFlock)</span>": alprLayer,
             },
             { position: 'topright', collapsed: false }
         ).addTo(map);
@@ -1142,7 +1144,7 @@
             document.getElementById('filter-permits-label').textContent = `>= ${filterState.permitsMin} permits`;
         }
 
-        let _demoLoaded = false, _osmLoaded = false;
+        let _demoLoaded = false, _osmLoaded = false, _alprActive = false;
         map.on('overlayadd', async (e) => {
             if (e.layer === demolitionsLayer && !_demoLoaded) {
                 _demoLoaded = true;
@@ -1152,7 +1154,15 @@
                 _osmLoaded = true;
                 await loadOsmFeatures();
             }
+            if (e.layer === alprLayer) {
+                _alprActive = true;
+                loadAlprForView();
+            }
         });
+        map.on('overlayremove', (e) => {
+            if (e.layer === alprLayer) _alprActive = false;
+        });
+        map.on('moveend', () => { if (_alprActive) loadAlprForView(); });
         const OSM_CATEGORY_EMOJI = { abandoned: '🏚️', ruins: '🏛️', disused: '🚧', brownfield: '🏭', other: '📍' };
         async function loadOsmFeatures() {
             if (PROXY_URL === 'PLACEHOLDER_PROXY_URL') {
@@ -1175,6 +1185,91 @@
                 console.error('Failed to load OSM features:', err);
             }
         }
+        // --- DeFlock ALPR (Automated License Plate Reader) layer ---
+        // Pulls from the DeFlock project's public R2 tile CDN
+        // (https://github.com/FoggedLens/deflock). Tiles are 20°x20° static JSON
+        // arrays of OSM-derived ALPR points. No auth or API key required.
+        const DEFLOCK_INDEX_URL = 'https://cdn.deflock.me/regions/index.json';
+        let _alprIndex = null;          // cached { expirationUtc, tileSize, tileUrl, regions:Set }
+        const _alprSeen = new Set();    // OSM ids already drawn (dedupe across pans)
+
+        async function _getAlprIndex() {
+            const now = Date.now() / 1000;
+            if (_alprIndex && now < _alprIndex.expirationUtc) return _alprIndex;
+            const r = await fetch(DEFLOCK_INDEX_URL);
+            if (!r.ok) throw new Error(`DeFlock index HTTP ${r.status}`);
+            const j = await r.json();
+            _alprIndex = {
+                expirationUtc: j.expiration_utc || (now + 600),
+                tileSize: j.tile_size_degrees || 20,
+                tileUrl: j.tile_url || 'https://cdn.deflock.me/regions/{lat}/{lon}.json',
+                regions: new Set(j.regions || []),
+            };
+            return _alprIndex;
+        }
+
+        function _alprTileKeys(bbox, size) {
+            const minLat = Math.floor(bbox.getSouth() / size) * size;
+            const maxLat = Math.floor(bbox.getNorth() / size) * size;
+            const minLon = Math.floor(bbox.getWest() / size) * size;
+            const maxLon = Math.floor(bbox.getEast() / size) * size;
+            const keys = [];
+            for (let lat = minLat; lat <= maxLat; lat += size) {
+                for (let lon = minLon; lon <= maxLon; lon += size) {
+                    keys.push(`${lat}/${lon}`);
+                }
+            }
+            return keys;
+        }
+
+        function _alprPopup(tags) {
+            const t = tags || {};
+            const parts = [];
+            if (t.operator || t.manufacturer || t.brand)
+                parts.push(`<p><b>Operator:</b> ${t.operator || t.manufacturer || t.brand}</p>`);
+            if (t['camera:direction'] || t.direction)
+                parts.push(`<p><b>Direction:</b> ${t['camera:direction'] || t.direction}°</p>`);
+            if (t['camera:mount']) parts.push(`<p><b>Mount:</b> ${t['camera:mount']}</p>`);
+            if (t.ref) parts.push(`<p><b>Ref:</b> ${t.ref}</p>`);
+            return `<div class="popup-content"><h3>📷 ALPR camera</h3>${parts.join('')}<p><small>Source: DeFlock / OSM</small></p></div>`;
+        }
+
+        async function loadAlprForView() {
+            try {
+                const idx = await _getAlprIndex();
+                const bbox = map.getBounds();
+                const keys = _alprTileKeys(bbox, idx.tileSize).filter(k => idx.regions.has(k));
+                if (keys.length === 0) return;
+                const responses = await Promise.all(keys.map(async k => {
+                    try {
+                        const [latKey, lonKey] = k.split('/');
+                        const url = idx.tileUrl.replace('{lat}', latKey).replace('{lon}', lonKey);
+                        const r = await fetch(url);
+                        if (!r.ok) return [];
+                        return await r.json();
+                    } catch { return []; }
+                }));
+                const south = bbox.getSouth(), north = bbox.getNorth();
+                const west = bbox.getWest(), east = bbox.getEast();
+                for (const arr of responses) {
+                    if (!Array.isArray(arr)) continue;
+                    for (const p of arr) {
+                        const lat = parseFloat(p.lat), lng = parseFloat(p.lon);
+                        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+                        if (lat < south || lat > north || lng < west || lng > east) continue;
+                        const id = `node:${p.id}`;
+                        if (_alprSeen.has(id)) continue;
+                        _alprSeen.add(id);
+                        const m = L.marker([lat, lng], { icon: makePinIcon('📷', 'osm') });
+                        m.bindPopup(_alprPopup(p.tags));
+                        alprLayer.addLayer(m);
+                    }
+                }
+            } catch (err) {
+                console.warn('DeFlock ALPR load failed:', err);
+            }
+        }
+
         async function loadDemolitions() {
             if (PROXY_URL === 'PLACEHOLDER_PROXY_URL') {
                 console.warn('PROXY_URL not set; demolitions layer will be empty.');

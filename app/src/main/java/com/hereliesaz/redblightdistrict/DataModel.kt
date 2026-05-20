@@ -67,3 +67,15 @@ data class OsmFeatureRow(
     val id: String?,
     val tags_summary: String?
 )
+
+data class AlprPoint(
+    val id: String,
+    val lat: Double,
+    val lng: Double,
+    val type: String?,        // e.g. "ALPR"
+    val operator: String?,    // e.g. "Flock Safety", "Motorola Vigilant"
+    val direction: String?,   // OSM `direction` tag (compass bearing or name)
+    val mount: String?,       // pole, lamp, wall, etc.
+    val ref: String?,         // operator reference / serial if present
+    val tagsSummary: String?
+)
