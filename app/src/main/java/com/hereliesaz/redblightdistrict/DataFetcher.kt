@@ -324,6 +324,7 @@ class DataFetcher {
     }
 
     private fun tileKeysForBoundingBox(bbox: BoundingBox, tileSize: Int): List<String> {
+        if (tileSize <= 0) return emptyList()
         val size = tileSize.toDouble()
         val minLat = (Math.floor(bbox.latSouth / size) * size).toInt()
         val maxLat = (Math.floor(bbox.latNorth / size) * size).toInt()

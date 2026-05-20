@@ -98,6 +98,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val REQUEST_PERMISSIONS = 1
+        private const val ALPR_MIN_ZOOM = 11.0
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -321,6 +322,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun fetchAlprForCurrentView() {
+        // ALPRs are only useful at street-level detail. Skip the fetch when the
+        // view is so wide that it would either span many DeFlock tiles or
+        // produce visually meaningless marker density.
+        if (mapView.zoomLevelDouble < ALPR_MIN_ZOOM) return
         dataFetcher.fetchAlprPoints(mapView.boundingBox, { points ->
             var added = 0
             for (p in points) {

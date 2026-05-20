@@ -1209,6 +1209,7 @@
         }
 
         function _alprTileKeys(bbox, size) {
+            if (!(size > 0)) return [];
             const minLat = Math.floor(bbox.getSouth() / size) * size;
             const maxLat = Math.floor(bbox.getNorth() / size) * size;
             const minLon = Math.floor(bbox.getWest() / size) * size;
@@ -1227,8 +1228,11 @@
             const parts = [];
             if (t.operator || t.manufacturer || t.brand)
                 parts.push(`<p><b>Operator:</b> ${t.operator || t.manufacturer || t.brand}</p>`);
-            if (t['camera:direction'] || t.direction)
-                parts.push(`<p><b>Direction:</b> ${t['camera:direction'] || t.direction}°</p>`);
+            const dir = t['camera:direction'] || t.direction;
+            if (dir) {
+                const suffix = Number.isFinite(parseFloat(dir)) && /^[\s\-+0-9.]+$/.test(dir) ? '°' : '';
+                parts.push(`<p><b>Direction:</b> ${dir}${suffix}</p>`);
+            }
             if (t['camera:mount']) parts.push(`<p><b>Mount:</b> ${t['camera:mount']}</p>`);
             if (t.ref) parts.push(`<p><b>Ref:</b> ${t.ref}</p>`);
             return `<div class="popup-content"><h3>📷 ALPR camera</h3>${parts.join('')}<p><small>Source: DeFlock / OSM</small></p></div>`;
