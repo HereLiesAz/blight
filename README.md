@@ -21,6 +21,8 @@ It acts as a digital scout, helping you identify "Fresh Canvases", avoid "Repeat
   - Filter by structure presence, zoning, active rehab status, and more.
 - **Auto-Clustering & Heatmaps:** See immediate spatial patterns using algorithmic hotspots and heatmaps.
 - **ALPR Awareness:** Optional `📷 ALPR cameras` layer surfaces Automated License Plate Reader locations sourced from the [DeFlock](https://github.com/FoggedLens/deflock) crowdsourced dataset (R2 tile CDN, with an OpenStreetMap Overpass fallback). Toggle it on from the layer control to scout surveillance footprint before fieldwork.
+- **Data-Freshness Badge:** A cyan pill at the top of the map shows the newest `notice_date` in the loaded dataset, so you can tell at a glance how stale the underlying city feed is.
+- **Cluster Street Views:** Cluster-center 🎯 markers float a [Mapillary](https://www.mapillary.com/) crowd-sourced street-view thumbnail above the pin when coverage exists. Grab a free token from [mapillary.com/dashboard/developers](https://www.mapillary.com/dashboard/developers) and add a line `MAPILLARY_TOKEN=MLY|...` to a `local.properties` file at the repo root (gitignored) to enable it; otherwise the feature stays silent.
 - **Local Intel Stash:** Tap any property to take notes, assign custom emoji pins, and capture photos directly to your device (data stays local!).
 - **Privacy-First:** No accounts, no cloud syncing of your notes, and GPS tracking only happens when you explicitly tap "Track GPS."
 - **Ghost Protocol:** A single panic button to instantly wipe all your local intel (notes, pins, photos) and reload the app cleanly.

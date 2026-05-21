@@ -24,6 +24,16 @@ def verPatch = versionProps.getProperty("versionPatch", "0")
 def currentVersionName = "${verMajor}.${verMinor}.${verPatch}"
 
 
+// Read MAPILLARY_TOKEN from local.properties (gitignored) so the secret is
+// kept off GitHub. Fallback is the placeholder string the runtime treats as
+// "no token, silently disable Mapillary".
+def localProps = new Properties()
+def localPropsFile = project.rootProject.file('local.properties')
+if (localPropsFile.exists()) {
+    localProps.load(new FileInputStream(localPropsFile))
+}
+def mapillaryToken = localProps.getProperty('MAPILLARY_TOKEN', 'PLACEHOLDER_MAPILLARY_TOKEN')
+
 android {
     namespace 'com.hereliesaz.redblightdistrict'
     compileSdk 37
@@ -36,6 +46,12 @@ android {
         versionName currentVersionName
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField "String", "MAPILLARY_TOKEN", "\"${mapillaryToken}\""
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 
     buildTypes {

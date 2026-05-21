@@ -10,5 +10,7 @@ android/
 android/app/build/
 android/.gradle/
 android/local.properties
+local.properties
+app/local.properties
 app/build/
 .gradle/
