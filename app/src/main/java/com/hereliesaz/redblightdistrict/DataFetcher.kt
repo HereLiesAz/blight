@@ -37,9 +37,10 @@ class DataFetcher {
     private val PROXY_URL = "PLACEHOLDER_PROXY_URL"
 
     // Free Mapillary access token (https://www.mapillary.com/dashboard/developers).
-    // Replace the placeholder to enable street-view thumbnails on cluster-center
-    // markers. While left as the placeholder, the layer silently no-ops.
-    private val MAPILLARY_TOKEN = "PLACEHOLDER_MAPILLARY_TOKEN"
+    // Set `MAPILLARY_TOKEN=MLY|...` in the (gitignored) `local.properties` at the
+    // repo root to enable street-view thumbnails on cluster-center markers.
+    // While unset, the layer silently no-ops.
+    private val MAPILLARY_TOKEN = BuildConfig.MAPILLARY_TOKEN
 
     fun fetchSectorData(boundingBox: BoundingBox, onSuccess: (List<MapItem>) -> Unit, onError: (Exception) -> Unit) {
         if (PROXY_URL == "PLACEHOLDER_PROXY_URL") {
