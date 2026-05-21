@@ -37,15 +37,21 @@ fun MapHost(
     modifier: Modifier = Modifier,
 ) {
     AndroidView(
-        factory = {
-            mapView.addMapListener(object : MapListener {
-                override fun onScroll(event: ScrollEvent?): Boolean { onMapMoved(); return false }
-                override fun onZoom(event: ZoomEvent?): Boolean { onMapMoved(); return false }
-            })
-            mapView
-        },
+        factory = { mapView },
         modifier = modifier.fillMaxSize(),
     )
+
+    // Keep the map listener bound to the LATEST onMapMoved closure. Wiring it
+    // inside AndroidView.factory would freeze on the first composition's lambda
+    // and miss any state captured after that.
+    DisposableEffect(mapView, onMapMoved) {
+        val listener = object : MapListener {
+            override fun onScroll(event: ScrollEvent?): Boolean { onMapMoved(); return false }
+            override fun onZoom(event: ZoomEvent?): Boolean { onMapMoved(); return false }
+        }
+        mapView.addMapListener(listener)
+        onDispose { mapView.removeMapListener(listener) }
+    }
 
     // Pause / resume the MapView with the composition lifecycle.
     DisposableEffect(Unit) {

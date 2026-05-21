@@ -1,7 +1,6 @@
 package com.hereliesaz.redblightdistrict
 
 import android.Manifest
-import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -11,7 +10,6 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
-import android.provider.MediaStore
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -78,27 +76,13 @@ import java.util.Locale
 class MainActivity : ComponentActivity() {
 
     private var currentPhotoPath: String? = null
-    var currentCaptureAddress: String? = null
+    private var currentCaptureAddress: String? = null
 
-    // Mapillary thumbnail cache per cluster centroid. The bitmaps live in an
-    // LruCache to bound memory; a separate `clusterThumbEmpty` set records
-    // "asked, no coverage" sentinels so the layer never retries those keys.
-    private val clusterThumbCache: android.util.LruCache<String, Bitmap> =
-        android.util.LruCache(CLUSTER_THUMB_CACHE_SIZE)
-    private val clusterThumbEmpty = mutableSetOf<String>()
-    private val clusterThumbInFlight = mutableSetOf<String>()
-
-    // Newest notice date kept up-to-date as new property data is merged so the
-    // freshness badge doesn't iterate masterData on every refresh.
-    private var newestNoticeDate: java.util.Date? = null
-
-    // Debounced redraw after thumbnail downloads — multiple in-flight Mapillary
-    // results landing in quick succession batch into a single applyFilters().
-    private val redrawHandler = android.os.Handler(android.os.Looper.getMainLooper())
-    private val redrawRunnable = Runnable { applyFilters() }
-
-    private val takePictureLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
+    // Modern AndroidX camera contract: hands the camera app a URI to write into
+    // and returns a success boolean. Avoids the Android 11+ package-visibility
+    // headaches around manual ACTION_IMAGE_CAPTURE + resolveActivity().
+    val takePictureLauncher = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) {
             val path = currentPhotoPath
             val address = currentCaptureAddress
             if (path != null && address != null) {
@@ -109,12 +93,6 @@ class MainActivity : ComponentActivity() {
     }
 
     var onPictureSaved: ((String, String) -> Unit)? = null
-    companion object {
-        private const val REQUEST_PERMISSIONS = 1
-        private const val ALPR_MIN_ZOOM = 11.0
-        private const val CLUSTER_THUMB_CACHE_SIZE = 64  // ≈48–64 thumbnails
-        private const val CLUSTER_REDRAW_DEBOUNCE_MS = 200L
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -149,30 +127,10 @@ class MainActivity : ComponentActivity() {
     }
 
     fun dispatchTakePictureIntent(address: String) {
+        val file = try { createImageFile() } catch (e: IOException) { return }
+        val uri: Uri = FileProvider.getUriForFile(this, "${applicationContext.packageName}.provider", file)
         currentCaptureAddress = address
-        Intent(MediaStore.ACTION_IMAGE_CAPTURE).also { intent ->
-            intent.resolveActivity(packageManager)?.also {
-                val photoFile: File? = try { createImageFile() } catch (e: IOException) { null }
-                photoFile?.also {
-                    val photoURI: Uri = FileProvider.getUriForFile(this, "${applicationContext.packageName}.provider", it)
-                    intent.putExtra(MediaStore.EXTRA_OUTPUT, photoURI)
-                    takePictureLauncher.launch(intent)
-                }
-            // Merge data avoiding duplicates
-            val existingIds = filterManager.masterData.map { it.caseno }.toSet()
-            val newItems = items.filter { it.caseno !in existingIds }
-            if (newItems.isNotEmpty()) {
-                filterManager.masterData.addAll(newItems)
-                filterManager.invalidateCache()
-                // Update the running newest-notice max with just the new items —
-                // avoids re-scanning all of masterData each fetch.
-                for (it in newItems) {
-                    val n = newestNoticeDate
-                    if (n == null || it.date.time > n.time) newestNoticeDate = it.date
-                }
-                applyFilters()
-            }
-        }
+        takePictureLauncher.launch(uri)
     }
 }
 
@@ -212,14 +170,26 @@ fun BlightApp(activity: MainActivity) {
     var camoOn by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var scrapeStatus by remember { mutableStateOf<Pair<String, androidx.compose.ui.graphics.Color>?>(null) }
-    var dataRev by remember { mutableStateOf(0) }  // bump to force recomposition of badge / lists
+    // Bumped whenever masterData merges new rows; drives the badge's remember(dataRev).
+    var dataRev by remember { mutableStateOf(0) }
     var pinCategories by remember { mutableStateOf(storageManager.loadPinCategories()) }
 
-    // ALPR (DeFlock) cache, deduped by OSM id
+    // ALPR (DeFlock) cache, deduped by OSM id.
     val alprCache = remember { mutableMapOf<String, AlprPoint>() }
-    // Mapillary thumbnail cache. null sentinel = "asked, no coverage".
-    val clusterThumbCache = remember { mutableMapOf<String, Bitmap?>() }
+    // Mapillary thumbnail cache. Bitmaps live in an LruCache(64) to bound
+    // memory; a separate set records "asked, no coverage" keys so the layer
+    // never retries those centroids.
+    val clusterThumbCache = remember { android.util.LruCache<String, Bitmap>(64) }
+    val clusterThumbEmpty = remember { mutableSetOf<String>() }
     val clusterThumbInFlight = remember { mutableSetOf<String>() }
+
+    // Debounced redraw — many thumbnails landing in quick succession collapse
+    // into a single applyFilters() pass instead of one per download.
+    val redrawHandler = remember { Handler(Looper.getMainLooper()) }
+    val redrawRunnableRef = remember { object { var value: Runnable? = null } }
+    // Debounced map-move handler — same Handler instance, but a separate one-slot
+    // holder so the two cadences can't cancel each other.
+    val moveRunnableRef = remember { object { var value: Runnable? = null } }
 
     val openRoute: (Double, Double) -> Unit = { lat, lng ->
         val uri = Uri.parse("https://www.google.com/maps/dir/?api=1&destination=$lat,$lng")
@@ -231,6 +201,17 @@ fun BlightApp(activity: MainActivity) {
 
     fun clusterThumbKey(lat: Double, lng: Double): String =
         String.format(Locale.US, "%.5f,%.5f", lat, lng)
+
+    // Forward-declared via a one-slot holder so applyFilters (above) can
+    // schedule itself through the same name the helpers below use.
+    val applyFiltersRef = remember { object { var value: (() -> Unit)? = null } }
+
+    fun scheduleClusterRedraw() {
+        redrawRunnableRef.value?.let { redrawHandler.removeCallbacks(it) }
+        val r = Runnable { applyFiltersRef.value?.invoke() }
+        redrawRunnableRef.value = r
+        redrawHandler.postDelayed(r, 200L)
+    }
 
     fun applyFilters() {
         val filtered = filterManager.applyFilters(graffitiFilterMode)
@@ -256,11 +237,11 @@ fun BlightApp(activity: MainActivity) {
             val cat = pinCategories.find { it.name == pin.category }
             val emoji = cat?.emoji ?: "📍"
             val m = mapManager.createEmojiMarker(pin.lat, pin.lng, emoji, pin.title)
-            m.infoWindow = PinInfoWindow(mapView, pin, storageManager, { applyFilters() }) { pinId ->
+            m.infoWindow = PinInfoWindow(mapView, pin, storageManager, { applyFiltersRef.value?.invoke() }) { pinId ->
                 val pins = storageManager.loadUserPins().toMutableList()
                 pins.removeAll { it.id == pinId }
                 storageManager.saveUserPins(pins)
-                applyFilters()
+                applyFiltersRef.value?.invoke()
             }
             mapManager.userPinsLayer.add(m)
         }
@@ -277,13 +258,11 @@ fun BlightApp(activity: MainActivity) {
             val lat = sLat / g.size
             val lng = sLng / g.size
             val key = clusterThumbKey(lat, lng)
-            mapManager.clusterCentersLayer.add(mapManager.createClusterCenterMarker(lat, lng, clusterThumbCache[key]))
-            if (!clusterThumbCache.containsKey(key) && key !in clusterThumbInFlight && viewBounds.contains(lat, lng)) {
             val cachedThumb = clusterThumbCache[key]
             mapManager.clusterCentersLayer.add(mapManager.createClusterCenterMarker(lat, lng, cachedThumb))
 
-            // Only fetch for centroids inside the current viewport, and only when
-            // we have neither a cached bitmap nor a known-empty sentinel.
+            // Only fetch for centroids inside the current viewport, and only
+            // when we have neither a cached bitmap nor a known-empty sentinel.
             if (cachedThumb == null
                 && key !in clusterThumbEmpty
                 && key !in clusterThumbInFlight
@@ -311,8 +290,9 @@ fun BlightApp(activity: MainActivity) {
         }
 
         mapView.invalidate()
-        dataRev++  // refresh badge / list dialogs that read masterData
+        dataRev++  // recompose badge / list dialogs that depend on masterData
     }
+    applyFiltersRef.value = ::applyFilters
 
     fun fetchExtras() {
         dataFetcher.fetchDemolitions { rows ->
@@ -320,86 +300,6 @@ fun BlightApp(activity: MainActivity) {
                 mapManager.demolitionsLayer.add(mapManager.createEmojiMarker(d.lat, d.lng, "🏗️", "Demolition"))
             }
             mapView.invalidate()
-            val fallback = cats[0].name
-            val updatedPins = pins.map { if (it.category == cat.name) it.copy(category = fallback) else it }
-            storageManager.saveUserPins(updatedPins)
-            storageManager.savePinCategories(cats)
-            applyFilters()
-        } else {
-            cats.removeAll { it.name == cat.name }
-            storageManager.savePinCategories(cats)
-        }
-        pinCategoryAdapter.updateData(cats)
-    }
-
-    private fun triggerScrape() {
-        scrapeStatus.visibility = View.VISIBLE
-        scrapeStatus.text = "🔄 Triggering Update..."
-        scrapeStatus.setBackgroundColor(Color.parseColor("#FFBF00"))
-        scrapeStatus.setTextColor(Color.BLACK)
-
-        dataFetcher.triggerScrape({
-            scrapeStatus.text = "✅ Update Complete!"
-            scrapeStatus.setBackgroundColor(Color.GREEN)
-            filterManager.masterData.clear()
-            newestNoticeDate = null
-            fetchData()
-            hideScrapeStatusDelayed()
-        }, { err ->
-            scrapeStatus.text = "❌ $err"
-            scrapeStatus.setBackgroundColor(Color.RED)
-            scrapeStatus.setTextColor(Color.WHITE)
-            hideScrapeStatusDelayed()
-        })
-    }
-
-    private fun hideScrapeStatusDelayed() {
-        scrapeStatus.postDelayed({
-            scrapeStatus.visibility = View.GONE
-            scrapeStatus.setBackgroundColor(Color.parseColor("#FFBF00"))
-            scrapeStatus.setTextColor(Color.BLACK)
-        }, 5000)
-    }
-
-    private fun generateQR() {
-        val notes = storageManager.getAllNotesAsMap()
-        val pins = storageManager.loadUserPins()
-        val cats = storageManager.loadPinCategories()
-
-        if (notes.isEmpty() && pins.isEmpty()) {
-            Toast.makeText(this, "No intel to beam.", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val json = JSONObject()
-        val stashArray = JSONArray()
-        notes.forEach { (k, v) ->
-            val o = JSONObject()
-            o.put("a", k)
-            o.put("n", v)
-            stashArray.put(o)
-        }
-        json.put("stash", stashArray)
-
-        val pinsArray = JSONArray()
-        pins.forEach { p ->
-            val o = JSONObject()
-            o.put("id", p.id)
-            o.put("lat", p.lat)
-            o.put("lng", p.lng)
-            o.put("cat", p.category)
-            o.put("t", p.title)
-            o.put("n", p.note)
-            pinsArray.put(o)
-        }
-        json.put("pins", pinsArray)
-
-        val catsArray = JSONArray()
-        cats.forEach { c ->
-            val o = JSONObject()
-            o.put("e", c.emoji)
-            o.put("n", c.name)
-            catsArray.put(o)
         }
         dataFetcher.fetchOsmFeatures { rows ->
             for (d in rows) {
@@ -415,7 +315,7 @@ fun BlightApp(activity: MainActivity) {
             var added = 0
             for (p in points) if (alprCache.put(p.id, p) == null) added++
             if (added > 0) applyFilters()
-        }, { /* silent */ })
+        }, { /* silent: ALPR layer is best-effort */ })
     }
 
     fun refreshClusterThumbnailsForViewport() {
@@ -482,58 +382,26 @@ fun BlightApp(activity: MainActivity) {
                 applyFilters()
                 return true
             }
-    /**
-     * Coalesce multiple Mapillary downloads landing in quick succession into a
-     * single applyFilters() pass instead of one redraw per thumbnail.
-     */
-    private fun scheduleClusterRedraw() {
-        redrawHandler.removeCallbacks(redrawRunnable)
-        redrawHandler.postDelayed(redrawRunnable, CLUSTER_REDRAW_DEBOUNCE_MS)
-    }
-
-    private fun updateDataFreshnessBadge() {
-        val badge = findViewById<TextView>(R.id.data_freshness_badge) ?: return
-        val newest = newestNoticeDate
-        if (newest == null) {
-            badge.text = "DATA: —"
-            badge.setTextColor(Color.parseColor("#888888"))
-            badge.background = ContextCompat.getDrawable(this, R.drawable.rounded_bg_grey_border)
-            return
         }
         val overlay = MapEventsOverlay(receiver)
         mapView.overlays.add(0, overlay)
         onDispose { mapView.overlays.remove(overlay) }
     }
 
-    // Initial load + initial badge state
     LaunchedEffect(Unit) {
         fetchData()
         fetchExtras()
-    private fun ghostProtocol() {
-        storageManager.clearAll()
-        alprCache.clear()
-        clusterThumbCache.evictAll()
-        clusterThumbEmpty.clear()
-        clusterThumbInFlight.clear()
-        newestNoticeDate = null
-        redrawHandler.removeCallbacks(redrawRunnable)
-        if (locationOverlay.isMyLocationEnabled) locationOverlay.disableMyLocation()
-        finish()
-        startActivity(intent)
     }
 
-    // Debounced refetch on every map move. `pendingRef` is a one-slot holder so
-    // the latest scheduled Runnable is cancellable across pan events.
-    val debounceHandler = remember { Handler(Looper.getMainLooper()) }
-    val pendingRef = remember { object { var value: Runnable? = null } }
+    // Debounced refetch on every map move.
     val onMapMoved: () -> Unit = {
-        pendingRef.value?.let { debounceHandler.removeCallbacks(it) }
+        moveRunnableRef.value?.let { redrawHandler.removeCallbacks(it) }
         val r = Runnable {
             fetchData()
             refreshClusterThumbnailsForViewport()
         }
-        pendingRef.value = r
-        debounceHandler.postDelayed(r, 500L)
+        moveRunnableRef.value = r
+        redrawHandler.postDelayed(r, 500L)
     }
 
     // ---- AzNavRail-hosted layout ----
@@ -565,10 +433,10 @@ fun BlightApp(activity: MainActivity) {
                 scrapeStatus = "✅ Update Complete!" to androidx.compose.ui.graphics.Color.Green
                 filterManager.masterData.clear()
                 fetchData()
-                debounceHandler.postDelayed({ scrapeStatus = null }, 5000)
+                redrawHandler.postDelayed({ scrapeStatus = null }, 5000)
             }, { err ->
                 scrapeStatus = "❌ $err" to Blight
-                debounceHandler.postDelayed({ scrapeStatus = null }, 5000)
+                redrawHandler.postDelayed({ scrapeStatus = null }, 5000)
             })
         })
         azRailItem(id = "beam", text = "🕸️ Beam Intel", content = Icons.Default.QrCode, onClick = {
@@ -599,8 +467,11 @@ fun BlightApp(activity: MainActivity) {
             onClick = {
                 storageManager.clearAll()
                 alprCache.clear()
-                clusterThumbCache.clear()
+                clusterThumbCache.evictAll()
+                clusterThumbEmpty.clear()
                 clusterThumbInFlight.clear()
+                redrawRunnableRef.value?.let { redrawHandler.removeCallbacks(it) }
+                moveRunnableRef.value?.let { redrawHandler.removeCallbacks(it) }
                 if (locationOverlay.isMyLocationEnabled) locationOverlay.disableMyLocation()
                 activity.finish()
                 activity.startActivity(activity.intent)
@@ -611,10 +482,13 @@ fun BlightApp(activity: MainActivity) {
             Box(modifier = Modifier.fillMaxSize()) {
                 MapHost(mapView = mapView, onMapMoved = onMapMoved)
 
-                // Freshness badge (reactive on dataRev)
-                @Suppress("UNUSED_EXPRESSION") dataRev
+                // Freshness badge: recompute the max date only when dataRev
+                // bumps (i.e. when new data merges in), not on every recomposition.
+                val newestDate = remember(dataRev) {
+                    filterManager.masterData.maxByOrNull { it.date.time }?.date
+                }
                 DataFreshnessBadge(
-                    newest = filterManager.masterData.maxByOrNull { it.date.time }?.date,
+                    newest = newestDate,
                     modifier = Modifier.align(Alignment.TopCenter).padding(top = 20.dp),
                 )
 
