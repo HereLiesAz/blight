@@ -1,46 +1,67 @@
 package com.hereliesaz.redblightdistrict
 
 import android.Manifest
-import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.Color
+import android.graphics.Color as AColor
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
-import android.provider.MediaStore
+import android.os.Handler
+import android.os.Looper
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import android.view.View
-import android.widget.Button
-import android.widget.CheckBox
-import android.widget.EditText
-import android.widget.FrameLayout
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.RelativeLayout
-import android.widget.SeekBar
-import android.widget.Spinner
-import android.widget.TextView
-import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FilterAlt
+import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
-import androidx.drawerlayout.widget.DrawerLayout
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import com.google.android.material.chip.Chip
-import com.google.android.material.chip.ChipGroup
+import androidx.navigation.compose.rememberNavController
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
+import com.hereliesaz.aznavrail.AzHostActivityLayout
+import com.hereliesaz.aznavrail.model.AzDockingSide
+import com.hereliesaz.redblightdistrict.ui.Amber
+import com.hereliesaz.redblightdistrict.ui.Blight
+import com.hereliesaz.redblightdistrict.ui.CamoOverlay
+import com.hereliesaz.redblightdistrict.ui.Cyan
+import com.hereliesaz.redblightdistrict.ui.DataFreshnessBadge
+import com.hereliesaz.redblightdistrict.ui.FiltersDrawerDialog
+import com.hereliesaz.redblightdistrict.ui.MapHost
+import com.hereliesaz.redblightdistrict.ui.PinCategoriesDialog
+import com.hereliesaz.redblightdistrict.ui.PropertyListDialog
+import com.hereliesaz.redblightdistrict.ui.QrDialog
+import com.hereliesaz.redblightdistrict.ui.RedBlightDistrictTheme
+import com.hereliesaz.redblightdistrict.ui.StatusPill
 import org.json.JSONArray
 import org.json.JSONObject
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
-import org.osmdroid.events.MapListener
-import org.osmdroid.events.ScrollEvent
-import org.osmdroid.events.ZoomEvent
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
@@ -52,362 +73,182 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : ComponentActivity() {
 
-    private lateinit var mapView: MapView
-    private lateinit var mapManager: MapManager
-    private lateinit var dataFetcher: DataFetcher
-    private lateinit var storageManager: StorageManager
-    private lateinit var filterManager: FilterManager
-
-    private lateinit var drawerLayout: DrawerLayout
-    private lateinit var camoUi: RelativeLayout
-    private lateinit var qrModal: FrameLayout
-    private lateinit var blightedModal: FrameLayout
-    private lateinit var listModal: FrameLayout
-    private lateinit var pinCatModal: FrameLayout
-
-    private lateinit var syncStatus: TextView
-    private lateinit var scrapeStatus: TextView
-
-    private lateinit var databaseAdapter: DatabaseAdapter
-    private lateinit var blightedAdapter: DatabaseAdapter
-    private lateinit var pinCategoryAdapter: PinCategoryAdapter
-
-    private lateinit var locationOverlay: MyLocationNewOverlay
-
-    private var graffitiFilterMode = "all" // all, graffiti, clean
-    private var colorMode = "status" // status, graffiti
     private var currentPhotoPath: String? = null
     private var currentCaptureAddress: String? = null
 
-    // ALPR (DeFlock) cache, deduped by OSM id so panning doesn't redraw duplicates.
-    private val alprCache = mutableMapOf<String, AlprPoint>()
-
-    // Mapillary thumbnail cache per cluster centroid. The bitmaps live in an
-    // LruCache to bound memory; a separate `clusterThumbEmpty` set records
-    // "asked, no coverage" sentinels so the layer never retries those keys.
-    private val clusterThumbCache: android.util.LruCache<String, Bitmap> =
-        android.util.LruCache(CLUSTER_THUMB_CACHE_SIZE)
-    private val clusterThumbEmpty = mutableSetOf<String>()
-    private val clusterThumbInFlight = mutableSetOf<String>()
-
-    // Newest notice date kept up-to-date as new property data is merged so the
-    // freshness badge doesn't iterate masterData on every refresh.
-    private var newestNoticeDate: java.util.Date? = null
-
-    // Debounced redraw after thumbnail downloads — multiple in-flight Mapillary
-    // results landing in quick succession batch into a single applyFilters().
-    private val redrawHandler = android.os.Handler(android.os.Looper.getMainLooper())
-    private val redrawRunnable = Runnable { applyFilters() }
-
-    private val takePictureLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            currentPhotoPath?.let { path ->
-                currentCaptureAddress?.let { address ->
-                    storageManager.saveImgPath(address, "file:$path")
-                    Toast.makeText(this, "Optics saved", Toast.LENGTH_SHORT).show()
-                }
+    // Modern AndroidX camera contract: hands the camera app a URI to write into
+    // and returns a success boolean. Avoids the Android 11+ package-visibility
+    // headaches around manual ACTION_IMAGE_CAPTURE + resolveActivity().
+    val takePictureLauncher = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) {
+            val path = currentPhotoPath
+            val address = currentCaptureAddress
+            if (path != null && address != null) {
+                onPictureSaved?.invoke(address, "file:$path")
             }
         }
         currentCaptureAddress = null
     }
 
-    companion object {
-        private const val REQUEST_PERMISSIONS = 1
-        private const val ALPR_MIN_ZOOM = 11.0
-        private const val CLUSTER_THUMB_CACHE_SIZE = 64  // ≈48–64 thumbnails
-        private const val CLUSTER_REDRAW_DEBOUNCE_MS = 200L
-    }
+    var onPictureSaved: ((String, String) -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         Configuration.getInstance().userAgentValue = packageName
-        setContentView(R.layout.activity_main)
-
-        storageManager = StorageManager(this)
-        dataFetcher = DataFetcher()
-        filterManager = FilterManager()
-
-        initViews()
-        setupMap()
-        setupListeners()
-        requestPermissions()
-
-        updateDataFreshnessBadge()
-        fetchData()
-        fetchExtras()
-    }
-
-    private fun fetchExtras() {
-        dataFetcher.fetchDemolitions { rows ->
-            for (d in rows) {
-                mapManager.demolitionsLayer.add(mapManager.createEmojiMarker(d.lat, d.lng, "🏗️", "Demolition"))
+        requestNeededPermissions()
+        setContent {
+            RedBlightDistrictTheme {
+                BlightApp(activity = this)
             }
-            mapView.invalidate()
-        }
-        dataFetcher.fetchOsmFeatures { rows ->
-            for (d in rows) {
-                mapManager.osmLayer.add(mapManager.createEmojiMarker(d.lat, d.lng, d.category ?: "🏚️", d.name ?: "OSM"))
-            }
-            mapView.invalidate()
         }
     }
 
-    private fun initViews() {
-        drawerLayout = findViewById(R.id.drawer_layout)
-        mapView = findViewById(R.id.map)
-        camoUi = findViewById(R.id.camo_ui)
-        qrModal = findViewById(R.id.qr_modal)
-        blightedModal = findViewById(R.id.blighted_modal)
-        listModal = findViewById(R.id.list_modal)
-        pinCatModal = findViewById(R.id.pin_cat_modal)
-        syncStatus = findViewById(R.id.sync_status)
-        scrapeStatus = findViewById(R.id.scrape_status)
-
-        // HUD Buttons
-        findViewById<Button>(R.id.btn_filters).setOnClickListener { drawerLayout.open() }
-        findViewById<Button>(R.id.btn_graffiti_filter).setOnClickListener { cycleGraffitiFilter() }
-        findViewById<Button>(R.id.btn_color_mode).setOnClickListener { cycleColorMode() }
-        findViewById<Button>(R.id.btn_pins).setOnClickListener { openPinCategories() }
-        findViewById<Button>(R.id.btn_list_blighted).setOnClickListener { showBlightedList() }
-        findViewById<Button>(R.id.btn_list_view).setOnClickListener { showDatabaseList() }
-        findViewById<Button>(R.id.btn_update_db).setOnClickListener { triggerScrape() }
-        findViewById<Button>(R.id.btn_beam_intel).setOnClickListener { generateQR() }
-        findViewById<Button>(R.id.btn_track_gps).setOnClickListener { toggleGps() }
-        findViewById<Button>(R.id.btn_ghost).setOnClickListener { ghostProtocol() }
-
-        findViewById<View>(R.id.camo_trigger).setOnClickListener { toggleCamo() }
-        camoUi.setOnClickListener { toggleCamo() }
-        findViewById<Button>(R.id.btn_qr_close).setOnClickListener { qrModal.visibility = View.GONE }
-        findViewById<View>(R.id.btn_blighted_close).setOnClickListener { blightedModal.visibility = View.GONE }
-        findViewById<Button>(R.id.btn_list_close).setOnClickListener { listModal.visibility = View.GONE }
-        findViewById<Button>(R.id.btn_pin_cat_close).setOnClickListener { pinCatModal.visibility = View.GONE }
-
-        // Setup RecyclerViews
-        databaseAdapter = DatabaseAdapter(emptyList()) { item -> openRoute(item.lat, item.lng) }
-        val recyclerDatabase = findViewById<RecyclerView>(R.id.recycler_database)
-        recyclerDatabase.layoutManager = LinearLayoutManager(this)
-        recyclerDatabase.adapter = databaseAdapter
-
-        blightedAdapter = DatabaseAdapter(emptyList()) { item -> openRoute(item.lat, item.lng) }
-        val recyclerBlighted = findViewById<RecyclerView>(R.id.recycler_blighted)
-        recyclerBlighted.layoutManager = LinearLayoutManager(this)
-        recyclerBlighted.adapter = blightedAdapter
-
-        pinCategoryAdapter = PinCategoryAdapter(storageManager.loadPinCategories()) { cat ->
-            deleteCategory(cat)
-        }
-        val recyclerPinCats = findViewById<RecyclerView>(R.id.recycler_pin_cats)
-        recyclerPinCats.layoutManager = LinearLayoutManager(this)
-        recyclerPinCats.adapter = pinCategoryAdapter
-
-        findViewById<Button>(R.id.btn_add_cat).setOnClickListener {
-            val emoji = findViewById<EditText>(R.id.edit_cat_emoji).text.toString().trim()
-            val name = findViewById<EditText>(R.id.edit_cat_name).text.toString().trim()
-            if (emoji.isNotEmpty() && name.isNotEmpty()) {
-                val cats = storageManager.loadPinCategories().toMutableList()
-                if (cats.none { it.name == name }) {
-                    cats.add(PinCategory(emoji, name))
-                    storageManager.savePinCategories(cats)
-                    pinCategoryAdapter.updateData(cats)
-                    findViewById<EditText>(R.id.edit_cat_emoji).setText("📍")
-                    findViewById<EditText>(R.id.edit_cat_name).text.clear()
-                    applyFilters()
-                } else {
-                    Toast.makeText(this, "Name already used", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-
-        // Filter actions
-        findViewById<Button>(R.id.btn_filter_reset).setOnClickListener {
-            filterManager.applyPreset("all")
-            applyFilters()
-        }
-        findViewById<Button>(R.id.btn_filter_apply).setOnClickListener {
-            updateFilterStateFromUI()
-            applyFilters()
-            drawerLayout.close()
-        }
-
-        // Timeline
-        val timeSlider = findViewById<SeekBar>(R.id.time_slider)
-        val timeLabel = findViewById<TextView>(R.id.time_label)
-        timeSlider.setOnSeekBarChangeListener(object: SeekBar.OnSeekBarChangeListener{
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                val monthsBack = 12 - progress
-                filterManager.state.monthsBack = monthsBack
-                timeLabel.text = if (monthsBack == 0) "⏳ Timeline: ALL TIME" else "⏳ Timeline: PAST $monthsBack MONTHS"
-                if (fromUser) applyFilters()
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
-    }
-
-    private fun setupMap() {
-        mapManager = MapManager(this, mapView)
-
-        locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(this), mapView)
-        locationOverlay.disableMyLocation()
-        mapView.overlays.add(locationOverlay)
-
-        mapView.addMapListener(object : MapListener {
-            private val debounceMs = 500L
-            private val handler = android.os.Handler(android.os.Looper.getMainLooper())
-            private var fetchRunnable: Runnable? = null
-
-            private fun triggerDebouncedFetch() {
-                fetchRunnable?.let { handler.removeCallbacks(it) }
-                fetchRunnable = Runnable {
-                    fetchData()
-                    refreshClusterThumbnailsForViewport()
-                }
-                handler.postDelayed(fetchRunnable!!, debounceMs)
-            }
-
-            override fun onScroll(event: ScrollEvent?): Boolean {
-                triggerDebouncedFetch()
-                return false
-            }
-            override fun onZoom(event: ZoomEvent?): Boolean {
-                triggerDebouncedFetch()
-                return false
-            }
-        })
-    }
-
-    private fun setupListeners() {
-        val mReceive = object : MapEventsReceiver {
-            override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean {
-                return false
-            }
-
-            override fun longPressHelper(p: GeoPoint?): Boolean {
-                if (p != null) {
-                    val cats = storageManager.loadPinCategories()
-                    val cat = cats.firstOrNull()?.name ?: "📍"
-                    val newPin = UserPin(
-                        id = "pin-${System.currentTimeMillis()}-${(Math.random() * 1000).toInt()}",
-                        lat = p.latitude,
-                        lng = p.longitude,
-                        category = cat,
-                        title = "",
-                        note = "",
-                        created = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date())
-                    )
-                    val pins = storageManager.loadUserPins().toMutableList()
-                    pins.add(newPin)
-                    storageManager.saveUserPins(pins)
-                    applyFilters()
-                    return true
-                }
-                return false
-            }
-        }
-        val overlayEvents = MapEventsOverlay(mReceive)
-        mapView.overlays.add(0, overlayEvents)
-    }
-
-    private fun requestPermissions() {
+    private fun requestNeededPermissions() {
         val perms = arrayOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.CAMERA
+            Manifest.permission.CAMERA,
         )
         val needed = perms.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
         if (needed.isNotEmpty()) {
-            ActivityCompat.requestPermissions(this, needed.toTypedArray(), REQUEST_PERMISSIONS)
+            ActivityCompat.requestPermissions(this, needed.toTypedArray(), 1)
         }
     }
 
-    private fun fetchData() {
-        findViewById<TextView>(R.id.loading_text).visibility = View.VISIBLE
-        dataFetcher.fetchSectorData(mapView.boundingBox, { items ->
-            findViewById<TextView>(R.id.loading_text).visibility = View.GONE
-
-            // Merge data avoiding duplicates
-            val existingIds = filterManager.masterData.map { it.caseno }.toSet()
-            val newItems = items.filter { it.caseno !in existingIds }
-            if (newItems.isNotEmpty()) {
-                filterManager.masterData.addAll(newItems)
-                filterManager.invalidateCache()
-                // Update the running newest-notice max with just the new items —
-                // avoids re-scanning all of masterData each fetch.
-                for (it in newItems) {
-                    val n = newestNoticeDate
-                    if (n == null || it.date.time > n.time) newestNoticeDate = it.date
-                }
-                applyFilters()
-            }
-            updateDataFreshnessBadge()
-        }, {
-            findViewById<TextView>(R.id.loading_text).visibility = View.GONE
-            Toast.makeText(this, "Fetch error: ${it.message}", Toast.LENGTH_SHORT).show()
-        })
-
-        fetchAlprForCurrentView()
+    @Throws(IOException::class)
+    private fun createImageFile(): File {
+        val timeStamp: String = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val dir: File? = getExternalFilesDir(Environment.DIRECTORY_PICTURES)
+        return File.createTempFile("JPEG_${timeStamp}_", ".jpg", dir).apply {
+            currentPhotoPath = absolutePath
+        }
     }
 
-    private fun fetchAlprForCurrentView() {
-        // ALPRs are only useful at street-level detail. Skip the fetch when the
-        // view is so wide that it would either span many DeFlock tiles or
-        // produce visually meaningless marker density.
-        if (mapView.zoomLevelDouble < ALPR_MIN_ZOOM) return
-        dataFetcher.fetchAlprPoints(mapView.boundingBox, { points ->
-            var added = 0
-            for (p in points) {
-                if (alprCache.put(p.id, p) == null) added++
-            }
-            if (added > 0) applyFilters()
-        }, { /* silent: ALPR layer is best-effort */ })
+    fun dispatchTakePictureIntent(address: String) {
+        val file = try { createImageFile() } catch (e: IOException) { return }
+        val uri: Uri = FileProvider.getUriForFile(this, "${applicationContext.packageName}.provider", file)
+        currentCaptureAddress = address
+        takePictureLauncher.launch(uri)
+    }
+}
+
+/**
+ * Root composable. Hosts the AzNavRail rail/menu, the osmdroid MapView, the
+ * overlay badges, and every dialog/modal that the legacy XML UI exposed.
+ */
+@Composable
+fun BlightApp(activity: MainActivity) {
+    val navController = rememberNavController()
+
+    // ---- Long-lived helpers (mirror the original Activity-scoped instances) ----
+    val storageManager = remember { StorageManager(activity) }
+    val dataFetcher = remember { DataFetcher() }
+    val filterManager = remember { FilterManager() }
+    val mapView = remember { MapView(activity) }
+    val mapManager = remember { MapManager(activity, mapView) }
+
+    // GPS overlay
+    val locationOverlay = remember {
+        MyLocationNewOverlay(GpsMyLocationProvider(activity), mapView).apply {
+            disableMyLocation()
+            mapView.overlays.add(this)
+        }
     }
 
-    private fun applyFilters() {
+    // ---- UI / data state ----
+    var graffitiFilterMode by remember { mutableStateOf("all") }
+    var colorMode by remember { mutableStateOf("status") }
+    var gpsOn by remember { mutableStateOf(false) }
+    var showFilters by remember { mutableStateOf(false) }
+    var showPinCats by remember { mutableStateOf(false) }
+    var showBlightedList by remember { mutableStateOf(false) }
+    var showDatabaseList by remember { mutableStateOf(false) }
+    var showQr by remember { mutableStateOf(false) }
+    var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var camoOn by remember { mutableStateOf(false) }
+    var loading by remember { mutableStateOf(false) }
+    var scrapeStatus by remember { mutableStateOf<Pair<String, androidx.compose.ui.graphics.Color>?>(null) }
+    // Bumped whenever masterData merges new rows; drives the badge's remember(dataRev).
+    var dataRev by remember { mutableStateOf(0) }
+    var pinCategories by remember { mutableStateOf(storageManager.loadPinCategories()) }
+
+    // ALPR (DeFlock) cache, deduped by OSM id.
+    val alprCache = remember { mutableMapOf<String, AlprPoint>() }
+    // Mapillary thumbnail cache. Bitmaps live in an LruCache(64) to bound
+    // memory; a separate set records "asked, no coverage" keys so the layer
+    // never retries those centroids.
+    val clusterThumbCache = remember { android.util.LruCache<String, Bitmap>(64) }
+    val clusterThumbEmpty = remember { mutableSetOf<String>() }
+    val clusterThumbInFlight = remember { mutableSetOf<String>() }
+
+    // Debounced redraw — many thumbnails landing in quick succession collapse
+    // into a single applyFilters() pass instead of one per download.
+    val redrawHandler = remember { Handler(Looper.getMainLooper()) }
+    val redrawRunnableRef = remember { object { var value: Runnable? = null } }
+    // Debounced map-move handler — same Handler instance, but a separate one-slot
+    // holder so the two cadences can't cancel each other.
+    val moveRunnableRef = remember { object { var value: Runnable? = null } }
+
+    val openRoute: (Double, Double) -> Unit = { lat, lng ->
+        val uri = Uri.parse("https://www.google.com/maps/dir/?api=1&destination=$lat,$lng")
+        activity.startActivity(Intent(Intent.ACTION_VIEW, uri))
+    }
+    activity.onPictureSaved = { address, fileUri ->
+        storageManager.saveImgPath(address, fileUri)
+    }
+
+    fun clusterThumbKey(lat: Double, lng: Double): String =
+        String.format(Locale.US, "%.5f,%.5f", lat, lng)
+
+    // Forward-declared via a one-slot holder so applyFilters (above) can
+    // schedule itself through the same name the helpers below use.
+    val applyFiltersRef = remember { object { var value: (() -> Unit)? = null } }
+
+    fun scheduleClusterRedraw() {
+        redrawRunnableRef.value?.let { redrawHandler.removeCallbacks(it) }
+        val r = Runnable { applyFiltersRef.value?.invoke() }
+        redrawRunnableRef.value = r
+        redrawHandler.postDelayed(r, 200L)
+    }
+
+    fun applyFilters() {
         val filtered = filterManager.applyFilters(graffitiFilterMode)
         mapManager.clearMarkers()
-
-        val heatList = mutableListOf<GeoPoint>()
-
+        val heat = mutableListOf<GeoPoint>()
         for (item in filtered) {
             val marker = mapManager.createPropertyMarker(item, colorMode)
-
             marker.snippet = "Status: ${item.prop.status}\nDeadline: ${item.prop.deadline}"
-            marker.infoWindow = PropertyInfoWindow(mapView, item, storageManager, ::openRoute, ::dispatchTakePictureIntent)
-
+            marker.infoWindow = PropertyInfoWindow(mapView, item, storageManager, openRoute) { addr ->
+                activity.dispatchTakePictureIntent(addr)
+            }
             if (item.prop.status == "Guilty") mapManager.guiltyLayer.add(marker)
             else mapManager.uncommittedLayer.add(marker)
-
-            heatList.add(GeoPoint(item.lat, item.lng))
-
-            // Hotspots
+            heat.add(GeoPoint(item.lat, item.lng))
             if ((item.prop.graffitiScore ?: 0.0) >= 0.8) {
                 mapManager.hotspotLayer.add(mapManager.createEmojiMarker(item.lat, item.lng, "🎨", item.prop.address))
             }
         }
+        mapManager.heatPoints = heat
 
-        mapManager.heatPoints = heatList
-
-        // Render User Pins
-        storageManager.loadUserPins().forEach { pin ->
-            val cat = storageManager.loadPinCategories().find { it.name == pin.category }
+        // User pins
+        for (pin in storageManager.loadUserPins()) {
+            val cat = pinCategories.find { it.name == pin.category }
             val emoji = cat?.emoji ?: "📍"
-            val marker = mapManager.createEmojiMarker(pin.lat, pin.lng, emoji, pin.title)
-            marker.infoWindow = PinInfoWindow(mapView, pin, storageManager, ::applyFilters) { pinId ->
+            val m = mapManager.createEmojiMarker(pin.lat, pin.lng, emoji, pin.title)
+            m.infoWindow = PinInfoWindow(mapView, pin, storageManager, { applyFiltersRef.value?.invoke() }) { pinId ->
                 val pins = storageManager.loadUserPins().toMutableList()
                 pins.removeAll { it.id == pinId }
                 storageManager.saveUserPins(pins)
-                applyFilters()
+                applyFiltersRef.value?.invoke()
             }
-            mapManager.userPinsLayer.add(marker)
+            mapManager.userPinsLayer.add(m)
         }
 
-        // Auto layers — cluster centroids, with optional Mapillary street-view
-        // thumbnails floating above each marker when coverage exists.
-        val groups = filterManager.ensureClusterGroups()
+        // Cluster centers (with optional Mapillary thumbnails)
         val viewBounds = mapView.boundingBox
+        val groups = filterManager.ensureClusterGroups()
         for (g in groups) {
             var sLat = 0.0; var sLng = 0.0
             for (idx in g) {
@@ -420,8 +261,8 @@ class MainActivity : AppCompatActivity() {
             val cachedThumb = clusterThumbCache[key]
             mapManager.clusterCentersLayer.add(mapManager.createClusterCenterMarker(lat, lng, cachedThumb))
 
-            // Only fetch for centroids inside the current viewport, and only when
-            // we have neither a cached bitmap nor a known-empty sentinel.
+            // Only fetch for centroids inside the current viewport, and only
+            // when we have neither a cached bitmap nor a known-empty sentinel.
             if (cachedThumb == null
                 && key !in clusterThumbEmpty
                 && key !in clusterThumbInFlight
@@ -436,253 +277,48 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Solo outliers
         for (item in filterManager.masterData) {
             if (filterManager.getClusterCountFor(item.caseno) == 0) {
-                 mapManager.outliersLayer.add(mapManager.createEmojiMarker(item.lat, item.lng, "⊙", "Solo Outlier"))
+                mapManager.outliersLayer.add(mapManager.createEmojiMarker(item.lat, item.lng, "⊙", "Solo Outlier"))
             }
         }
 
-        // ALPR markers (DeFlock dataset, OSM-backed)
+        // ALPR cameras
         for (alpr in alprCache.values) {
             mapManager.alprLayer.add(mapManager.createAlprMarker(alpr))
         }
 
         mapView.invalidate()
+        dataRev++  // recompose badge / list dialogs that depend on masterData
     }
+    applyFiltersRef.value = ::applyFilters
 
-    private fun updateFilterStateFromUI() {
-        val state = filterManager.state
-
-        state.propertyTypes.clear()
-        if (findViewById<Chip>(R.id.chip_residential).isChecked) state.propertyTypes.add("residential")
-        if (findViewById<Chip>(R.id.chip_commercial).isChecked) state.propertyTypes.add("commercial")
-        if (findViewById<Chip>(R.id.chip_mixed).isChecked) state.propertyTypes.add("mixed")
-        if (findViewById<Chip>(R.id.chip_vacant).isChecked) state.propertyTypes.add("vacant")
-
-        state.deadlineWindow = when (findViewById<ChipGroup>(R.id.chipgroup_deadline).checkedChipId) {
-            R.id.chip_dl_lt7 -> "<7"
-            R.id.chip_dl_7_14 -> "7-14"
-            R.id.chip_dl_gt14 -> ">14"
-            R.id.chip_dl_expired -> "expired"
-            else -> "all"
-        }
-
-        state.hasStructure = when (findViewById<ChipGroup>(R.id.chipgroup_structure).checkedChipId) {
-            R.id.chip_struct_yes -> "yes"
-            R.id.chip_struct_no -> "no"
-            else -> "both"
-        }
-
-        state.activeRehab = when (findViewById<ChipGroup>(R.id.chipgroup_rehab).checkedChipId) {
-            R.id.chip_rehab_exclude -> "exclude"
-            R.id.chip_rehab_only -> "only"
-            else -> "all"
-        }
-
-        state.cluster = when (findViewById<ChipGroup>(R.id.chipgroup_cluster).checkedChipId) {
-            R.id.chip_cluster_solo -> "solo"
-            R.id.chip_cluster_cluster -> "cluster"
-            else -> "all"
-        }
-
-        state.demoStatus = when (findViewById<ChipGroup>(R.id.chipgroup_demo).checkedChipId) {
-            R.id.chip_demo_pending -> "pending"
-            R.id.chip_demo_permitted -> "permitted"
-            R.id.chip_demo_completed -> "completed"
-            R.id.chip_demo_none -> "none"
-            else -> "all"
-        }
-
-        state.daysBlightedMin = findViewById<SeekBar>(R.id.slider_days_blighted).progress
-        state.permitsMin = findViewById<SeekBar>(R.id.slider_permits).progress
-        state.repeatOnly = findViewById<CheckBox>(R.id.check_repeat_offender).isChecked
-    }
-
-    private fun cycleGraffitiFilter() {
-        val btn = findViewById<Button>(R.id.btn_graffiti_filter)
-        graffitiFilterMode = when(graffitiFilterMode) {
-            "all" -> "graffiti"
-            "graffiti" -> "clean"
-            else -> "all"
-        }
-        btn.text = "🎨 Graffiti: ${graffitiFilterMode.replaceFirstChar { it.uppercase() }}"
-        applyFilters()
-    }
-
-    private fun cycleColorMode() {
-        val btn = findViewById<Button>(R.id.btn_color_mode)
-        colorMode = if (colorMode == "status") "graffiti" else "status"
-        btn.text = "🎨 Color: ${colorMode.replaceFirstChar { it.uppercase() }}"
-        applyFilters()
-    }
-
-    private fun openPinCategories() {
-        pinCatModal.visibility = View.VISIBLE
-    }
-
-    private fun showBlightedList() {
-        val bounds = mapView.boundingBox
-        val cutoff = java.util.Calendar.getInstance().apply { add(java.util.Calendar.MONTH, -filterManager.state.monthsBack) }.time
-        val visibleBlighted = filterManager.masterData.filter { item ->
-            val isGuilty = item.prop.status == "Guilty"
-            val isVisible = bounds.contains(item.lat, item.lng)
-            val isWithinTimeline = filterManager.state.monthsBack == 0 || item.date.after(cutoff)
-            isGuilty && isVisible && isWithinTimeline
-        }
-        blightedAdapter.updateData(visibleBlighted)
-        blightedModal.visibility = View.VISIBLE
-    }
-
-    private fun showDatabaseList() {
-        databaseAdapter.updateData(filterManager.masterData)
-        listModal.visibility = View.VISIBLE
-    }
-
-    private fun openRoute(lat: Double, lng: Double) {
-        val uri = Uri.parse("https://www.google.com/maps/dir/?api=1&destination=$lat,$lng")
-        val intent = Intent(Intent.ACTION_VIEW, uri)
-        startActivity(intent)
-    }
-
-    private fun deleteCategory(cat: PinCategory) {
-        val pins = storageManager.loadUserPins()
-        val inUse = pins.filter { it.category == cat.name }
-        val cats = storageManager.loadPinCategories().toMutableList()
-
-        if (inUse.isNotEmpty()) {
-            cats.removeAll { it.name == cat.name }
-            if (cats.isEmpty()) {
-                Toast.makeText(this, "Cannot delete last category while pins exist", Toast.LENGTH_SHORT).show()
-                return
+    fun fetchExtras() {
+        dataFetcher.fetchDemolitions { rows ->
+            for (d in rows) {
+                mapManager.demolitionsLayer.add(mapManager.createEmojiMarker(d.lat, d.lng, "🏗️", "Demolition"))
             }
-            val fallback = cats[0].name
-            val updatedPins = pins.map { if (it.category == cat.name) it.copy(category = fallback) else it }
-            storageManager.saveUserPins(updatedPins)
-            storageManager.savePinCategories(cats)
-            applyFilters()
-        } else {
-            cats.removeAll { it.name == cat.name }
-            storageManager.savePinCategories(cats)
+            mapView.invalidate()
         }
-        pinCategoryAdapter.updateData(cats)
-    }
-
-    private fun triggerScrape() {
-        scrapeStatus.visibility = View.VISIBLE
-        scrapeStatus.text = "🔄 Triggering Update..."
-        scrapeStatus.setBackgroundColor(Color.parseColor("#FFBF00"))
-        scrapeStatus.setTextColor(Color.BLACK)
-
-        dataFetcher.triggerScrape({
-            scrapeStatus.text = "✅ Update Complete!"
-            scrapeStatus.setBackgroundColor(Color.GREEN)
-            filterManager.masterData.clear()
-            newestNoticeDate = null
-            fetchData()
-            hideScrapeStatusDelayed()
-        }, { err ->
-            scrapeStatus.text = "❌ $err"
-            scrapeStatus.setBackgroundColor(Color.RED)
-            scrapeStatus.setTextColor(Color.WHITE)
-            hideScrapeStatusDelayed()
-        })
-    }
-
-    private fun hideScrapeStatusDelayed() {
-        scrapeStatus.postDelayed({
-            scrapeStatus.visibility = View.GONE
-            scrapeStatus.setBackgroundColor(Color.parseColor("#FFBF00"))
-            scrapeStatus.setTextColor(Color.BLACK)
-        }, 5000)
-    }
-
-    private fun generateQR() {
-        val notes = storageManager.getAllNotesAsMap()
-        val pins = storageManager.loadUserPins()
-        val cats = storageManager.loadPinCategories()
-
-        if (notes.isEmpty() && pins.isEmpty()) {
-            Toast.makeText(this, "No intel to beam.", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val json = JSONObject()
-        val stashArray = JSONArray()
-        notes.forEach { (k, v) ->
-            val o = JSONObject()
-            o.put("a", k)
-            o.put("n", v)
-            stashArray.put(o)
-        }
-        json.put("stash", stashArray)
-
-        val pinsArray = JSONArray()
-        pins.forEach { p ->
-            val o = JSONObject()
-            o.put("id", p.id)
-            o.put("lat", p.lat)
-            o.put("lng", p.lng)
-            o.put("cat", p.category)
-            o.put("t", p.title)
-            o.put("n", p.note)
-            pinsArray.put(o)
-        }
-        json.put("pins", pinsArray)
-
-        val catsArray = JSONArray()
-        cats.forEach { c ->
-            val o = JSONObject()
-            o.put("e", c.emoji)
-            o.put("n", c.name)
-            catsArray.put(o)
-        }
-        json.put("cats", catsArray)
-
-        val payload = json.toString()
-        val writer = QRCodeWriter()
-        try {
-            val bitMatrix = writer.encode(payload, BarcodeFormat.QR_CODE, 256, 256)
-            val width = bitMatrix.width
-            val height = bitMatrix.height
-            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565)
-            for (x in 0 until width) {
-                for (y in 0 until height) {
-                    bitmap.setPixel(x, y, if (bitMatrix.get(x, y)) Color.BLACK else Color.WHITE)
-                }
+        dataFetcher.fetchOsmFeatures { rows ->
+            for (d in rows) {
+                mapManager.osmLayer.add(mapManager.createEmojiMarker(d.lat, d.lng, d.category ?: "🏚️", d.name ?: "OSM"))
             }
-            findViewById<ImageView>(R.id.qr_image).setImageBitmap(bitmap)
-            qrModal.visibility = View.VISIBLE
-        } catch (e: Exception) {
-            Toast.makeText(this, "Error generating QR", Toast.LENGTH_SHORT).show()
+            mapView.invalidate()
         }
     }
 
-    private fun toggleGps() {
-        val btn = findViewById<Button>(R.id.btn_track_gps)
-        if (locationOverlay.isMyLocationEnabled) {
-            locationOverlay.disableMyLocation()
-            btn.setTextColor(Color.parseColor("#EEEEEE"))
-        } else {
-            locationOverlay.enableMyLocation()
-            btn.setTextColor(Color.parseColor("#007bff"))
-            mapView.controller.setZoom(18.0)
-        }
+    fun fetchAlprForCurrentView() {
+        if (mapView.zoomLevelDouble < 11.0) return
+        dataFetcher.fetchAlprPoints(mapView.boundingBox, { points ->
+            var added = 0
+            for (p in points) if (alprCache.put(p.id, p) == null) added++
+            if (added > 0) applyFilters()
+        }, { /* silent: ALPR layer is best-effort */ })
     }
 
-    private fun toggleCamo() {
-        camoUi.visibility = if (camoUi.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-    }
-
-    private fun clusterThumbKey(lat: Double, lng: Double): String =
-        String.format(Locale.US, "%.5f,%.5f", lat, lng)
-
-    /**
-     * Kick off Mapillary thumbnail fetches for any cluster centroid that is
-     * currently in the viewport and not yet cached or in-flight. Doesn't redraw
-     * markers itself — each completed fetch calls applyFilters() to swap the
-     * cluster-center icon for the composite (thumb + 🎯) version.
-     */
-    private fun refreshClusterThumbnailsForViewport() {
+    fun refreshClusterThumbnailsForViewport() {
         if (filterManager.masterData.isEmpty()) return
         val viewBounds = mapView.boundingBox
         val groups = filterManager.ensureClusterGroups()
@@ -706,77 +342,277 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * Coalesce multiple Mapillary downloads landing in quick succession into a
-     * single applyFilters() pass instead of one redraw per thumbnail.
-     */
-    private fun scheduleClusterRedraw() {
-        redrawHandler.removeCallbacks(redrawRunnable)
-        redrawHandler.postDelayed(redrawRunnable, CLUSTER_REDRAW_DEBOUNCE_MS)
+    fun fetchData() {
+        loading = true
+        dataFetcher.fetchSectorData(mapView.boundingBox, { items ->
+            loading = false
+            val existing = filterManager.masterData.map { it.caseno }.toSet()
+            val newItems = items.filter { it.caseno !in existing }
+            if (newItems.isNotEmpty()) {
+                filterManager.masterData.addAll(newItems)
+                filterManager.invalidateCache()
+                applyFilters()
+            }
+            dataRev++
+        }, {
+            loading = false
+        })
+        fetchAlprForCurrentView()
     }
 
-    private fun updateDataFreshnessBadge() {
-        val badge = findViewById<TextView>(R.id.data_freshness_badge) ?: return
-        val newest = newestNoticeDate
-        if (newest == null) {
-            badge.text = "DATA: —"
-            badge.setTextColor(Color.parseColor("#888888"))
-            badge.background = ContextCompat.getDrawable(this, R.drawable.rounded_bg_grey_border)
-            return
-        }
-        val fmt = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
-        badge.text = "NEWEST NOTICE: ${fmt.format(newest).uppercase(Locale.getDefault())}"
-        badge.setTextColor(Color.parseColor("#00E5FF"))
-        badge.background = ContextCompat.getDrawable(this, R.drawable.rounded_bg_cyan_border)
-    }
-
-    private fun ghostProtocol() {
-        storageManager.clearAll()
-        alprCache.clear()
-        clusterThumbCache.evictAll()
-        clusterThumbEmpty.clear()
-        clusterThumbInFlight.clear()
-        newestNoticeDate = null
-        redrawHandler.removeCallbacks(redrawRunnable)
-        if (locationOverlay.isMyLocationEnabled) locationOverlay.disableMyLocation()
-        finish()
-        startActivity(intent)
-    }
-
-    // --- Camera Capture Helpers (Used by InfoWindows ideally) ---
-    @Throws(IOException::class)
-    private fun createImageFile(): File {
-        val timeStamp: String = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val storageDir: File? = getExternalFilesDir(Environment.DIRECTORY_PICTURES)
-        return File.createTempFile("JPEG_${timeStamp}_", ".jpg", storageDir).apply {
-            currentPhotoPath = absolutePath
-        }
-    }
-
-    private fun dispatchTakePictureIntent(address: String) {
-        currentCaptureAddress = address
-        Intent(MediaStore.ACTION_IMAGE_CAPTURE).also { takePictureIntent ->
-            takePictureIntent.resolveActivity(packageManager)?.also {
-                val photoFile: File? = try {
-                    createImageFile()
-                } catch (ex: IOException) { null }
-                photoFile?.also {
-                    val photoURI: Uri = FileProvider.getUriForFile(this, "${applicationContext.packageName}.provider", it)
-                    takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoURI)
-                    takePictureLauncher.launch(takePictureIntent)
-                }
+    // Long-press on map → drop a user pin at that GeoPoint.
+    DisposableEffect(Unit) {
+        val receiver = object : MapEventsReceiver {
+            override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean = false
+            override fun longPressHelper(p: GeoPoint?): Boolean {
+                if (p == null) return false
+                val firstCat = pinCategories.firstOrNull()?.name ?: "📍"
+                val newPin = UserPin(
+                    id = "pin-${System.currentTimeMillis()}-${(Math.random() * 1000).toInt()}",
+                    lat = p.latitude,
+                    lng = p.longitude,
+                    category = firstCat,
+                    title = "",
+                    note = "",
+                    created = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).format(Date()),
+                )
+                val pins = storageManager.loadUserPins().toMutableList()
+                pins.add(newPin)
+                storageManager.saveUserPins(pins)
+                applyFilters()
+                return true
             }
         }
-        currentCaptureAddress = null
+        val overlay = MapEventsOverlay(receiver)
+        mapView.overlays.add(0, overlay)
+        onDispose { mapView.overlays.remove(overlay) }
     }
 
-    override fun onResume() {
-        super.onResume()
-        mapView.onResume()
+    LaunchedEffect(Unit) {
+        fetchData()
+        fetchExtras()
     }
 
-    override fun onPause() {
-        super.onPause()
-        mapView.onPause()
+    // Debounced refetch on every map move.
+    val onMapMoved: () -> Unit = {
+        moveRunnableRef.value?.let { redrawHandler.removeCallbacks(it) }
+        val r = Runnable {
+            fetchData()
+            refreshClusterThumbnailsForViewport()
+        }
+        moveRunnableRef.value = r
+        redrawHandler.postDelayed(r, 500L)
+    }
+
+    // ---- AzNavRail-hosted layout ----
+    AzHostActivityLayout(navController = navController, initiallyExpanded = false) {
+        azConfig(
+            dockingSide = AzDockingSide.RIGHT,
+            packButtons = true,
+            displayAppName = true,
+        )
+        azTheme(activeColor = Amber)
+
+        azRailItem(id = "filters", text = "FILTERS", content = Icons.Default.FilterAlt, onClick = { showFilters = true })
+        azRailItem(id = "graffiti", text = "🎨 ${graffitiFilterMode.replaceFirstChar { it.uppercase() }}", onClick = {
+            graffitiFilterMode = when (graffitiFilterMode) {
+                "all" -> "graffiti"; "graffiti" -> "clean"; else -> "all"
+            }
+            applyFilters()
+        })
+        azRailItem(id = "color", text = "🎨 ${colorMode.replaceFirstChar { it.uppercase() }}", onClick = {
+            colorMode = if (colorMode == "status") "graffiti" else "status"
+            applyFilters()
+        })
+        azRailItem(id = "pins", text = "📂 Pins", content = Icons.Default.PushPin, onClick = { showPinCats = true })
+        azRailItem(id = "blighted", text = "📋 BLIGHTED", onClick = { showBlightedList = true })
+        azRailItem(id = "list", text = "📋 List", content = Icons.Default.Visibility, onClick = { showDatabaseList = true })
+        azRailItem(id = "update", text = "🔄 Update", content = Icons.Default.Refresh, onClick = {
+            scrapeStatus = "🔄 Triggering Update..." to Amber
+            dataFetcher.triggerScrape({
+                scrapeStatus = "✅ Update Complete!" to androidx.compose.ui.graphics.Color.Green
+                filterManager.masterData.clear()
+                fetchData()
+                redrawHandler.postDelayed({ scrapeStatus = null }, 5000)
+            }, { err ->
+                scrapeStatus = "❌ $err" to Blight
+                redrawHandler.postDelayed({ scrapeStatus = null }, 5000)
+            })
+        })
+        azRailItem(id = "beam", text = "🕸️ Beam Intel", content = Icons.Default.QrCode, onClick = {
+            qrBitmap = generateQrBitmap(storageManager)
+            if (qrBitmap != null) showQr = true
+        })
+        azRailItem(
+            id = "gps",
+            text = "📍 GPS",
+            content = Icons.Default.MyLocation,
+            color = if (gpsOn) Cyan else null,
+            onClick = {
+                gpsOn = !gpsOn
+                if (gpsOn) {
+                    locationOverlay.enableMyLocation()
+                    mapView.controller.setZoom(18.0)
+                } else {
+                    locationOverlay.disableMyLocation()
+                }
+            },
+        )
+        azMenuItem(id = "camo", text = "👁 Camo", content = Icons.Default.Visibility, onClick = { camoOn = true })
+        azMenuItem(
+            id = "ghost",
+            text = "⚠️ GHOST",
+            content = Icons.Default.Delete,
+            color = Blight,
+            onClick = {
+                storageManager.clearAll()
+                alprCache.clear()
+                clusterThumbCache.evictAll()
+                clusterThumbEmpty.clear()
+                clusterThumbInFlight.clear()
+                redrawRunnableRef.value?.let { redrawHandler.removeCallbacks(it) }
+                moveRunnableRef.value?.let { redrawHandler.removeCallbacks(it) }
+                if (locationOverlay.isMyLocationEnabled) locationOverlay.disableMyLocation()
+                activity.finish()
+                activity.startActivity(activity.intent)
+            },
+        )
+
+        onscreen(alignment = Alignment.TopStart) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                MapHost(mapView = mapView, onMapMoved = onMapMoved)
+
+                // Freshness badge: recompute the max date only when dataRev
+                // bumps (i.e. when new data merges in), not on every recomposition.
+                val newestDate = remember(dataRev) {
+                    filterManager.masterData.maxByOrNull { it.date.time }?.date
+                }
+                DataFreshnessBadge(
+                    newest = newestDate,
+                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 20.dp),
+                )
+
+                if (loading) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .background(androidx.compose.ui.graphics.Color(0xCC0B0B0B))
+                            .padding(12.dp),
+                    ) { Text("Scanning Sector...", color = Amber) }
+                }
+
+                scrapeStatus?.let { (text, bg) ->
+                    StatusPill(text = text, color = bg, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 100.dp))
+                }
+
+                // Camo trigger (invisible 80dp box top-left)
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .size(80.dp)
+                        .clickable { camoOn = true },
+                )
+            }
+        }
+    }
+
+    // ---- Dialogs ----
+    if (showFilters) {
+        FiltersDrawerDialog(
+            filterManager = filterManager,
+            onDismiss = { showFilters = false },
+            onApply = { applyFilters() },
+            onReset = { applyFilters() },
+        )
+    }
+    if (showPinCats) {
+        PinCategoriesDialog(
+            categories = pinCategories,
+            onAdd = { cat ->
+                if (pinCategories.none { it.name == cat.name }) {
+                    val updated = pinCategories.toMutableList().apply { add(cat) }
+                    storageManager.savePinCategories(updated)
+                    pinCategories = updated
+                    applyFilters()
+                }
+            },
+            onDelete = { cat ->
+                val pins = storageManager.loadUserPins()
+                val inUse = pins.filter { it.category == cat.name }
+                val updated = pinCategories.toMutableList().apply { removeAll { it.name == cat.name } }
+                if (inUse.isNotEmpty() && updated.isEmpty()) return@PinCategoriesDialog  // keep last
+                if (inUse.isNotEmpty()) {
+                    val fallback = updated[0].name
+                    storageManager.saveUserPins(pins.map { if (it.category == cat.name) it.copy(category = fallback) else it })
+                }
+                storageManager.savePinCategories(updated)
+                pinCategories = updated
+                applyFilters()
+            },
+            onDismiss = { showPinCats = false },
+        )
+    }
+    if (showBlightedList) {
+        val visible = filterManager.masterData.filter {
+            it.prop.status == "Guilty" && mapView.boundingBox.contains(it.lat, it.lng)
+        }
+        PropertyListDialog(
+            title = "Blighted Properties in View",
+            items = visible,
+            onDismiss = { showBlightedList = false },
+            onRouteClick = { lat, lng -> openRoute(lat, lng) },
+        )
+    }
+    if (showDatabaseList) {
+        PropertyListDialog(
+            title = "Database Records",
+            items = filterManager.masterData,
+            onDismiss = { showDatabaseList = false },
+            onRouteClick = { lat, lng -> openRoute(lat, lng) },
+        )
+    }
+    if (showQr) {
+        QrDialog(bitmap = qrBitmap, onDismiss = { showQr = false })
+    }
+    if (camoOn) {
+        CamoOverlay(onDismiss = { camoOn = false })
+    }
+}
+
+private fun generateQrBitmap(storageManager: StorageManager): Bitmap? {
+    val notes = storageManager.getAllNotesAsMap()
+    val pins = storageManager.loadUserPins()
+    val cats = storageManager.loadPinCategories()
+    if (notes.isEmpty() && pins.isEmpty()) return null
+    val json = JSONObject()
+    val stashArray = JSONArray()
+    notes.forEach { (k, v) ->
+        val o = JSONObject(); o.put("a", k); o.put("n", v); stashArray.put(o)
+    }
+    json.put("stash", stashArray)
+    val pinsArray = JSONArray()
+    pins.forEach { p ->
+        val o = JSONObject()
+        o.put("id", p.id); o.put("lat", p.lat); o.put("lng", p.lng)
+        o.put("cat", p.category); o.put("t", p.title); o.put("n", p.note)
+        pinsArray.put(o)
+    }
+    json.put("pins", pinsArray)
+    val catsArray = JSONArray()
+    cats.forEach { c ->
+        val o = JSONObject(); o.put("e", c.emoji); o.put("n", c.name); catsArray.put(o)
+    }
+    json.put("cats", catsArray)
+    return try {
+        val matrix = QRCodeWriter().encode(json.toString(), BarcodeFormat.QR_CODE, 256, 256)
+        val bmp = Bitmap.createBitmap(matrix.width, matrix.height, Bitmap.Config.RGB_565)
+        for (x in 0 until matrix.width) {
+            for (y in 0 until matrix.height) {
+                bmp.setPixel(x, y, if (matrix.get(x, y)) AColor.BLACK else AColor.WHITE)
+            }
+        }
+        bmp
+    } catch (e: Exception) {
+        null
     }
 }
