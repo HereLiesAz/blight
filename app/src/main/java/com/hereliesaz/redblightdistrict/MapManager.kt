@@ -165,6 +165,16 @@ class MapManager(private val context: Context, private val mapView: MapView) {
     }
 
     /**
+     * Per-thumbnail cache of the composited cluster-center BitmapDrawable, so
+     * pan/zoom-driven redraws don't reallocate the composite bitmap on every
+     * applyFilters() call. Weakly keyed on the source Bitmap so entries
+     * disappear automatically when the caller (MainActivity's thumbnail cache)
+     * lets a bitmap go.
+     */
+    private val clusterDrawableCache: MutableMap<Bitmap, BitmapDrawable> =
+        java.util.WeakHashMap()
+
+    /**
      * Cluster-center marker. When [thumbnail] is non-null, composites the
      * Mapillary street-view image (red-bordered, 96x64 dp) above the standard
      * 🎯 pin glyph; otherwise falls back to a plain pin like [createEmojiMarker].
@@ -172,6 +182,16 @@ class MapManager(private val context: Context, private val mapView: MapView) {
     fun createClusterCenterMarker(lat: Double, lng: Double, thumbnail: Bitmap?): Marker {
         if (thumbnail == null) {
             return createEmojiMarker(lat, lng, "🎯", "Cluster Center")
+        }
+
+        val cached = clusterDrawableCache[thumbnail]
+        if (cached != null) {
+            val marker = Marker(mapView)
+            marker.position = GeoPoint(lat, lng)
+            marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+            marker.icon = cached
+            marker.title = "🎯 Cluster Center"
+            return marker
         }
 
         val density = context.resources.displayMetrics.density
@@ -214,10 +234,13 @@ class MapManager(private val context: Context, private val mapView: MapView) {
             pinDrawable.draw(canvas)
         }
 
+        val drawable = BitmapDrawable(context.resources, out)
+        clusterDrawableCache[thumbnail] = drawable
+
         val marker = Marker(mapView)
         marker.position = GeoPoint(lat, lng)
         marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-        marker.icon = BitmapDrawable(context.resources, out)
+        marker.icon = drawable
         marker.title = "🎯 Cluster Center"
         return marker
     }

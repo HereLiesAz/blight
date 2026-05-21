@@ -84,10 +84,22 @@ class MainActivity : AppCompatActivity() {
     // ALPR (DeFlock) cache, deduped by OSM id so panning doesn't redraw duplicates.
     private val alprCache = mutableMapOf<String, AlprPoint>()
 
-    // Mapillary thumbnail cache per cluster centroid. A null value is a
-    // deliberate sentinel for "no coverage" so the layer never retries.
-    private val clusterThumbCache = mutableMapOf<String, Bitmap?>()
+    // Mapillary thumbnail cache per cluster centroid. The bitmaps live in an
+    // LruCache to bound memory; a separate `clusterThumbEmpty` set records
+    // "asked, no coverage" sentinels so the layer never retries those keys.
+    private val clusterThumbCache: android.util.LruCache<String, Bitmap> =
+        android.util.LruCache(CLUSTER_THUMB_CACHE_SIZE)
+    private val clusterThumbEmpty = mutableSetOf<String>()
     private val clusterThumbInFlight = mutableSetOf<String>()
+
+    // Newest notice date kept up-to-date as new property data is merged so the
+    // freshness badge doesn't iterate masterData on every refresh.
+    private var newestNoticeDate: java.util.Date? = null
+
+    // Debounced redraw after thumbnail downloads — multiple in-flight Mapillary
+    // results landing in quick succession batch into a single applyFilters().
+    private val redrawHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val redrawRunnable = Runnable { applyFilters() }
 
     private val takePictureLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
@@ -104,6 +116,8 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val REQUEST_PERMISSIONS = 1
         private const val ALPR_MIN_ZOOM = 11.0
+        private const val CLUSTER_THUMB_CACHE_SIZE = 64  // ≈48–64 thumbnails
+        private const val CLUSTER_REDRAW_DEBOUNCE_MS = 200L
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -320,6 +334,12 @@ class MainActivity : AppCompatActivity() {
             if (newItems.isNotEmpty()) {
                 filterManager.masterData.addAll(newItems)
                 filterManager.invalidateCache()
+                // Update the running newest-notice max with just the new items —
+                // avoids re-scanning all of masterData each fetch.
+                for (it in newItems) {
+                    val n = newestNoticeDate
+                    if (n == null || it.date.time > n.time) newestNoticeDate = it.date
+                }
                 applyFilters()
             }
             updateDataFreshnessBadge()
@@ -401,16 +421,17 @@ class MainActivity : AppCompatActivity() {
             mapManager.clusterCentersLayer.add(mapManager.createClusterCenterMarker(lat, lng, cachedThumb))
 
             // Only fetch for centroids inside the current viewport, and only when
-            // we have no prior result (cached null counts as "asked, no coverage").
-            if (!clusterThumbCache.containsKey(key)
+            // we have neither a cached bitmap nor a known-empty sentinel.
+            if (cachedThumb == null
+                && key !in clusterThumbEmpty
                 && key !in clusterThumbInFlight
                 && viewBounds.contains(lat, lng)
             ) {
                 clusterThumbInFlight.add(key)
                 dataFetcher.fetchNearestMapillaryThumb(lat, lng) { bmp ->
-                    clusterThumbCache[key] = bmp
+                    if (bmp != null) clusterThumbCache.put(key, bmp) else clusterThumbEmpty.add(key)
                     clusterThumbInFlight.remove(key)
-                    if (bmp != null) applyFilters()
+                    if (bmp != null) scheduleClusterRedraw()
                 }
             }
         }
@@ -556,6 +577,7 @@ class MainActivity : AppCompatActivity() {
             scrapeStatus.text = "✅ Update Complete!"
             scrapeStatus.setBackgroundColor(Color.GREEN)
             filterManager.masterData.clear()
+            newestNoticeDate = null
             fetchData()
             hideScrapeStatusDelayed()
         }, { err ->
@@ -674,21 +696,28 @@ class MainActivity : AppCompatActivity() {
             val lng = sLng / g.size
             if (!viewBounds.contains(lat, lng)) continue
             val key = clusterThumbKey(lat, lng)
-            if (clusterThumbCache.containsKey(key) || key in clusterThumbInFlight) continue
+            if (clusterThumbCache[key] != null || key in clusterThumbEmpty || key in clusterThumbInFlight) continue
             clusterThumbInFlight.add(key)
             dataFetcher.fetchNearestMapillaryThumb(lat, lng) { bmp ->
-                clusterThumbCache[key] = bmp
+                if (bmp != null) clusterThumbCache.put(key, bmp) else clusterThumbEmpty.add(key)
                 clusterThumbInFlight.remove(key)
-                if (bmp != null) applyFilters()
+                if (bmp != null) scheduleClusterRedraw()
             }
         }
     }
 
+    /**
+     * Coalesce multiple Mapillary downloads landing in quick succession into a
+     * single applyFilters() pass instead of one redraw per thumbnail.
+     */
+    private fun scheduleClusterRedraw() {
+        redrawHandler.removeCallbacks(redrawRunnable)
+        redrawHandler.postDelayed(redrawRunnable, CLUSTER_REDRAW_DEBOUNCE_MS)
+    }
+
     private fun updateDataFreshnessBadge() {
         val badge = findViewById<TextView>(R.id.data_freshness_badge) ?: return
-        val newest = filterManager.masterData
-            .mapNotNull { it.date }
-            .maxByOrNull { it.time }
+        val newest = newestNoticeDate
         if (newest == null) {
             badge.text = "DATA: —"
             badge.setTextColor(Color.parseColor("#888888"))
@@ -704,8 +733,11 @@ class MainActivity : AppCompatActivity() {
     private fun ghostProtocol() {
         storageManager.clearAll()
         alprCache.clear()
-        clusterThumbCache.clear()
+        clusterThumbCache.evictAll()
+        clusterThumbEmpty.clear()
         clusterThumbInFlight.clear()
+        newestNoticeDate = null
+        redrawHandler.removeCallbacks(redrawRunnable)
         if (locationOverlay.isMyLocationEnabled) locationOverlay.disableMyLocation()
         finish()
         startActivity(intent)
