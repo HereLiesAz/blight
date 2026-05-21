@@ -1,14 +1,19 @@
 package com.hereliesaz.redblightdistrict
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Point
 import android.graphics.RadialGradient
+import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.Shader
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import androidx.core.content.ContextCompat
+import kotlin.math.roundToInt
 import org.osmdroid.api.IGeoPoint
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.util.GeoPoint
@@ -156,6 +161,64 @@ class MapManager(private val context: Context, private val mapView: MapView) {
         }
 
         marker.title = item.prop.address
+        return marker
+    }
+
+    /**
+     * Cluster-center marker. When [thumbnail] is non-null, composites the
+     * Mapillary street-view image (red-bordered, 96x64 dp) above the standard
+     * 🎯 pin glyph; otherwise falls back to a plain pin like [createEmojiMarker].
+     */
+    fun createClusterCenterMarker(lat: Double, lng: Double, thumbnail: Bitmap?): Marker {
+        if (thumbnail == null) {
+            return createEmojiMarker(lat, lng, "🎯", "Cluster Center")
+        }
+
+        val density = context.resources.displayMetrics.density
+        val thumbW = (96 * density).roundToInt()
+        val thumbH = (64 * density).roundToInt()
+        val border = (2 * density).roundToInt()
+        val gap = (8 * density).roundToInt()
+        val pinH = (32 * density).roundToInt()
+        val pinW = pinH
+
+        val totalW = maxOf(thumbW, pinW)
+        val totalH = thumbH + gap + pinH
+
+        val out = Bitmap.createBitmap(totalW, totalH, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+
+        // Thumbnail with red border, top-center
+        val thumbLeft = (totalW - thumbW) / 2f
+        val thumbRect = RectF(thumbLeft, 0f, thumbLeft + thumbW, thumbH.toFloat())
+        val src = Rect(0, 0, thumbnail.width, thumbnail.height)
+        val innerDst = RectF(
+            thumbRect.left + border, thumbRect.top + border,
+            thumbRect.right - border, thumbRect.bottom - border
+        )
+        canvas.drawBitmap(thumbnail, src, innerDst, Paint(Paint.FILTER_BITMAP_FLAG))
+        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = border.toFloat()
+            color = Color.parseColor("#FF3366")
+        }
+        canvas.drawRect(thumbRect, borderPaint)
+
+        // Tinted stock pin, bottom-center, matching createEmojiMarker's glyph.
+        val pinDrawable = ContextCompat.getDrawable(context, android.R.drawable.ic_menu_myplaces)?.mutate()
+        if (pinDrawable != null) {
+            pinDrawable.setTint(Color.parseColor("#FFBF00"))
+            val left = (totalW - pinW) / 2
+            val top = thumbH + gap
+            pinDrawable.setBounds(left, top, left + pinW, top + pinH)
+            pinDrawable.draw(canvas)
+        }
+
+        val marker = Marker(mapView)
+        marker.position = GeoPoint(lat, lng)
+        marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+        marker.icon = BitmapDrawable(context.resources, out)
+        marker.title = "🎯 Cluster Center"
         return marker
     }
 

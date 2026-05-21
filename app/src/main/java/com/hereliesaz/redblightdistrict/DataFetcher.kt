@@ -1,11 +1,15 @@
 package com.hereliesaz.redblightdistrict
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -17,6 +21,11 @@ import org.osmdroid.util.BoundingBox
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Locale
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 class DataFetcher {
     private val client = OkHttpClient()
@@ -26,6 +35,11 @@ class DataFetcher {
     // NOTE: This should ideally be configurable or injected from a BuildConfig/Secrets file.
     // For this rewrite to match index.html exactly, we leave the placeholder, but implement the fallback live Socrata query logic.
     private val PROXY_URL = "PLACEHOLDER_PROXY_URL"
+
+    // Free Mapillary access token (https://www.mapillary.com/dashboard/developers).
+    // Replace the placeholder to enable street-view thumbnails on cluster-center
+    // markers. While left as the placeholder, the layer silently no-ops.
+    private val MAPILLARY_TOKEN = "PLACEHOLDER_MAPILLARY_TOKEN"
 
     fun fetchSectorData(boundingBox: BoundingBox, onSuccess: (List<MapItem>) -> Unit, onError: (Exception) -> Unit) {
         if (PROXY_URL == "PLACEHOLDER_PROXY_URL") {
@@ -473,5 +487,103 @@ class DataFetcher {
                  } catch (e: Exception) { mainHandler.post { onSuccess(emptyList()) } }
              }
          })
+    }
+
+    // --- Mapillary street-view thumbnails for cluster-center markers ---
+    //
+    // Looks up the nearest crowd-sourced image to the given centroid via the
+    // Mapillary Graph API, picks the geometrically closest candidate (not the
+    // API's default ordering), then downloads its 256px thumbnail bitmap.
+    // Returns null on any failure, no coverage, or a placeholder token — the
+    // caller is expected to cache null to suppress retries.
+    fun fetchNearestMapillaryThumb(lat: Double, lng: Double, onResult: (Bitmap?) -> Unit) {
+        if (MAPILLARY_TOKEN == "PLACEHOLDER_MAPILLARY_TOKEN") {
+            Log.w("DataFetcher", "Mapillary token is placeholder; cluster thumbnails disabled.")
+            mainHandler.post { onResult(null) }
+            return
+        }
+
+        // ~40m square: 1° lat ≈ 111km, so 0.00036° ≈ 40m. Scale longitude by cos(lat).
+        val dLat = 0.00036
+        val dLng = 0.00036 / max(0.1, cos(lat * Math.PI / 180.0))
+        val bbox = "${lng - dLng},${lat - dLat},${lng + dLng},${lat + dLat}"
+        val encodedToken = java.net.URLEncoder.encode(MAPILLARY_TOKEN, "UTF-8")
+        val url = ("https://graph.mapillary.com/images?access_token=$encodedToken" +
+            "&fields=id,thumb_256_url,computed_geometry&bbox=$bbox&limit=8")
+            .toHttpUrlOrNull()
+        if (url == null) {
+            mainHandler.post { onResult(null) }
+            return
+        }
+
+        val request = Request.Builder().url(url).build()
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                Log.w("DataFetcher", "Mapillary lookup failed: ${e.message}")
+                mainHandler.post { onResult(null) }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val thumbUrl: String? = try {
+                    if (!response.isSuccessful) null
+                    else {
+                        val body = response.body?.string() ?: "{}"
+                        val data = JSONObject(body).optJSONArray("data") ?: JSONArray()
+                        var best: String? = null
+                        var bestDist = Double.POSITIVE_INFINITY
+                        var firstAny: String? = null
+                        for (i in 0 until data.length()) {
+                            val c = data.optJSONObject(i) ?: continue
+                            val tu = c.optString("thumb_256_url", "").takeIf { it.isNotBlank() }
+                            if (tu != null && firstAny == null) firstAny = tu
+                            val geom = c.optJSONObject("computed_geometry") ?: continue
+                            val coords = geom.optJSONArray("coordinates") ?: continue
+                            if (coords.length() < 2) continue
+                            val cLng = coords.optDouble(0, Double.NaN)
+                            val cLat = coords.optDouble(1, Double.NaN)
+                            if (cLat.isNaN() || cLng.isNaN()) continue
+                            if (tu == null) continue
+                            val d = haversineMeters(lat, lng, cLat, cLng)
+                            if (d < bestDist) { bestDist = d; best = tu }
+                        }
+                        best ?: firstAny
+                    }
+                } catch (e: Exception) {
+                    Log.w("DataFetcher", "Mapillary parse failed: ${e.message}")
+                    null
+                } finally {
+                    response.close()
+                }
+
+                if (thumbUrl == null) {
+                    mainHandler.post { onResult(null) }
+                } else {
+                    downloadBitmap(thumbUrl) { bmp -> mainHandler.post { onResult(bmp) } }
+                }
+            }
+        })
+    }
+
+    private fun downloadBitmap(url: String, onResult: (Bitmap?) -> Unit) {
+        val request = Request.Builder().url(url).build()
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) { onResult(null) }
+            override fun onResponse(call: Call, response: Response) {
+                val bmp = try {
+                    if (response.isSuccessful) response.body?.byteStream()?.use { BitmapFactory.decodeStream(it) } else null
+                } catch (e: Exception) { null } finally { response.close() }
+                onResult(bmp)
+            }
+        })
+    }
+
+    private fun haversineMeters(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
+        val r = 6371000.0
+        val toRad = { x: Double -> x * Math.PI / 180.0 }
+        val dLat = toRad(lat2 - lat1)
+        val dLng = toRad(lng2 - lng1)
+        val a = sin(dLat / 2) * sin(dLat / 2) +
+            cos(toRad(lat1)) * cos(toRad(lat2)) * sin(dLng / 2) * sin(dLng / 2)
+        return r * 2 * atan2(sqrt(a), sqrt(1 - a))
     }
 }

@@ -84,6 +84,11 @@ class MainActivity : AppCompatActivity() {
     // ALPR (DeFlock) cache, deduped by OSM id so panning doesn't redraw duplicates.
     private val alprCache = mutableMapOf<String, AlprPoint>()
 
+    // Mapillary thumbnail cache per cluster centroid. A null value is a
+    // deliberate sentinel for "no coverage" so the layer never retries.
+    private val clusterThumbCache = mutableMapOf<String, Bitmap?>()
+    private val clusterThumbInFlight = mutableSetOf<String>()
+
     private val takePictureLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             currentPhotoPath?.let { path ->
@@ -116,6 +121,7 @@ class MainActivity : AppCompatActivity() {
         setupListeners()
         requestPermissions()
 
+        updateDataFreshnessBadge()
         fetchData()
         fetchExtras()
     }
@@ -241,7 +247,10 @@ class MainActivity : AppCompatActivity() {
 
             private fun triggerDebouncedFetch() {
                 fetchRunnable?.let { handler.removeCallbacks(it) }
-                fetchRunnable = Runnable { fetchData() }
+                fetchRunnable = Runnable {
+                    fetchData()
+                    refreshClusterThumbnailsForViewport()
+                }
                 handler.postDelayed(fetchRunnable!!, debounceMs)
             }
 
@@ -313,6 +322,7 @@ class MainActivity : AppCompatActivity() {
                 filterManager.invalidateCache()
                 applyFilters()
             }
+            updateDataFreshnessBadge()
         }, {
             findViewById<TextView>(R.id.loading_text).visibility = View.GONE
             Toast.makeText(this, "Fetch error: ${it.message}", Toast.LENGTH_SHORT).show()
@@ -374,8 +384,10 @@ class MainActivity : AppCompatActivity() {
             mapManager.userPinsLayer.add(marker)
         }
 
-        // Auto layers
+        // Auto layers — cluster centroids, with optional Mapillary street-view
+        // thumbnails floating above each marker when coverage exists.
         val groups = filterManager.ensureClusterGroups()
+        val viewBounds = mapView.boundingBox
         for (g in groups) {
             var sLat = 0.0; var sLng = 0.0
             for (idx in g) {
@@ -384,7 +396,23 @@ class MainActivity : AppCompatActivity() {
             }
             val lat = sLat / g.size
             val lng = sLng / g.size
-            mapManager.clusterCentersLayer.add(mapManager.createEmojiMarker(lat, lng, "🎯", "Cluster Center"))
+            val key = clusterThumbKey(lat, lng)
+            val cachedThumb = clusterThumbCache[key]
+            mapManager.clusterCentersLayer.add(mapManager.createClusterCenterMarker(lat, lng, cachedThumb))
+
+            // Only fetch for centroids inside the current viewport, and only when
+            // we have no prior result (cached null counts as "asked, no coverage").
+            if (!clusterThumbCache.containsKey(key)
+                && key !in clusterThumbInFlight
+                && viewBounds.contains(lat, lng)
+            ) {
+                clusterThumbInFlight.add(key)
+                dataFetcher.fetchNearestMapillaryThumb(lat, lng) { bmp ->
+                    clusterThumbCache[key] = bmp
+                    clusterThumbInFlight.remove(key)
+                    if (bmp != null) applyFilters()
+                }
+            }
         }
 
         for (item in filterManager.masterData) {
@@ -623,9 +651,61 @@ class MainActivity : AppCompatActivity() {
         camoUi.visibility = if (camoUi.visibility == View.VISIBLE) View.GONE else View.VISIBLE
     }
 
+    private fun clusterThumbKey(lat: Double, lng: Double): String =
+        String.format(Locale.US, "%.5f,%.5f", lat, lng)
+
+    /**
+     * Kick off Mapillary thumbnail fetches for any cluster centroid that is
+     * currently in the viewport and not yet cached or in-flight. Doesn't redraw
+     * markers itself — each completed fetch calls applyFilters() to swap the
+     * cluster-center icon for the composite (thumb + 🎯) version.
+     */
+    private fun refreshClusterThumbnailsForViewport() {
+        if (filterManager.masterData.isEmpty()) return
+        val viewBounds = mapView.boundingBox
+        val groups = filterManager.ensureClusterGroups()
+        for (g in groups) {
+            var sLat = 0.0; var sLng = 0.0
+            for (idx in g) {
+                sLat += filterManager.masterData[idx].lat
+                sLng += filterManager.masterData[idx].lng
+            }
+            val lat = sLat / g.size
+            val lng = sLng / g.size
+            if (!viewBounds.contains(lat, lng)) continue
+            val key = clusterThumbKey(lat, lng)
+            if (clusterThumbCache.containsKey(key) || key in clusterThumbInFlight) continue
+            clusterThumbInFlight.add(key)
+            dataFetcher.fetchNearestMapillaryThumb(lat, lng) { bmp ->
+                clusterThumbCache[key] = bmp
+                clusterThumbInFlight.remove(key)
+                if (bmp != null) applyFilters()
+            }
+        }
+    }
+
+    private fun updateDataFreshnessBadge() {
+        val badge = findViewById<TextView>(R.id.data_freshness_badge) ?: return
+        val newest = filterManager.masterData
+            .mapNotNull { it.date }
+            .maxByOrNull { it.time }
+        if (newest == null) {
+            badge.text = "DATA: —"
+            badge.setTextColor(Color.parseColor("#888888"))
+            badge.background = ContextCompat.getDrawable(this, R.drawable.rounded_bg_grey_border)
+            return
+        }
+        val fmt = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
+        badge.text = "NEWEST NOTICE: ${fmt.format(newest).uppercase(Locale.getDefault())}"
+        badge.setTextColor(Color.parseColor("#00E5FF"))
+        badge.background = ContextCompat.getDrawable(this, R.drawable.rounded_bg_cyan_border)
+    }
+
     private fun ghostProtocol() {
         storageManager.clearAll()
         alprCache.clear()
+        clusterThumbCache.clear()
+        clusterThumbInFlight.clear()
         if (locationOverlay.isMyLocationEnabled) locationOverlay.disableMyLocation()
         finish()
         startActivity(intent)
