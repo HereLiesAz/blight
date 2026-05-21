@@ -28,6 +28,7 @@ class MapManager(private val context: Context, private val mapView: MapView) {
     val clusterCentersLayer = FolderOverlay().apply { name = "🎯 Cluster centers (auto)" }
     val outliersLayer = FolderOverlay().apply { name = "⊙ Solo outliers (auto)" }
     val osmLayer = FolderOverlay().apply { name = "🏚️ OSM features (auto)" }
+    val alprLayer = FolderOverlay().apply { name = "📷 ALPR cameras (DeFlock)" }
 
     var heatPoints = listOf<GeoPoint>()
     val heatLayer = object : Overlay() {
@@ -89,6 +90,7 @@ class MapManager(private val context: Context, private val mapView: MapView) {
         mapView.overlays.add(clusterCentersLayer)
         mapView.overlays.add(outliersLayer)
         mapView.overlays.add(osmLayer)
+        mapView.overlays.add(alprLayer)
     }
 
     fun clearMarkers() {
@@ -100,8 +102,35 @@ class MapManager(private val context: Context, private val mapView: MapView) {
         clusterCentersLayer.items.clear()
         outliersLayer.items.clear()
         osmLayer.items.clear()
+        alprLayer.items.clear()
         heatPoints = emptyList()
         mapView.invalidate()
+    }
+
+    fun createAlprMarker(point: AlprPoint): Marker {
+        val marker = Marker(mapView)
+        marker.position = GeoPoint(point.lat, point.lng)
+        marker.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+
+        val drawable = ContextCompat.getDrawable(context, android.R.drawable.ic_menu_camera)?.mutate()
+        if (drawable != null) {
+            drawable.setTint(Color.parseColor("#00E5FF"))
+            marker.icon = drawable
+        }
+
+        val title = buildString {
+            append("📷 ")
+            append(point.type ?: "ALPR")
+            point.operator?.takeIf { it.isNotBlank() }?.let { append(" — ").append(it) }
+        }
+        marker.title = title
+        marker.snippet = buildString {
+            point.direction?.takeIf { it.isNotBlank() }?.let { append("Direction: ").append(it).append('\n') }
+            point.mount?.takeIf { it.isNotBlank() }?.let { append("Mount: ").append(it).append('\n') }
+            point.ref?.takeIf { it.isNotBlank() }?.let { append("Ref: ").append(it).append('\n') }
+            point.tagsSummary?.let { append(it) }
+        }.trim()
+        return marker
     }
 
     fun createPropertyMarker(item: MapItem, colorMode: String): Marker {
