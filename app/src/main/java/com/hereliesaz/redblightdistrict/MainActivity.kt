@@ -80,7 +80,24 @@ class MainActivity : ComponentActivity() {
     private var currentPhotoPath: String? = null
     var currentCaptureAddress: String? = null
 
-    val takePictureLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+    // Mapillary thumbnail cache per cluster centroid. The bitmaps live in an
+    // LruCache to bound memory; a separate `clusterThumbEmpty` set records
+    // "asked, no coverage" sentinels so the layer never retries those keys.
+    private val clusterThumbCache: android.util.LruCache<String, Bitmap> =
+        android.util.LruCache(CLUSTER_THUMB_CACHE_SIZE)
+    private val clusterThumbEmpty = mutableSetOf<String>()
+    private val clusterThumbInFlight = mutableSetOf<String>()
+
+    // Newest notice date kept up-to-date as new property data is merged so the
+    // freshness badge doesn't iterate masterData on every refresh.
+    private var newestNoticeDate: java.util.Date? = null
+
+    // Debounced redraw after thumbnail downloads — multiple in-flight Mapillary
+    // results landing in quick succession batch into a single applyFilters().
+    private val redrawHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val redrawRunnable = Runnable { applyFilters() }
+
+    private val takePictureLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             val path = currentPhotoPath
             val address = currentCaptureAddress
@@ -92,6 +109,12 @@ class MainActivity : ComponentActivity() {
     }
 
     var onPictureSaved: ((String, String) -> Unit)? = null
+    companion object {
+        private const val REQUEST_PERMISSIONS = 1
+        private const val ALPR_MIN_ZOOM = 11.0
+        private const val CLUSTER_THUMB_CACHE_SIZE = 64  // ≈48–64 thumbnails
+        private const val CLUSTER_REDRAW_DEBOUNCE_MS = 200L
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -135,6 +158,19 @@ class MainActivity : ComponentActivity() {
                     intent.putExtra(MediaStore.EXTRA_OUTPUT, photoURI)
                     takePictureLauncher.launch(intent)
                 }
+            // Merge data avoiding duplicates
+            val existingIds = filterManager.masterData.map { it.caseno }.toSet()
+            val newItems = items.filter { it.caseno !in existingIds }
+            if (newItems.isNotEmpty()) {
+                filterManager.masterData.addAll(newItems)
+                filterManager.invalidateCache()
+                // Update the running newest-notice max with just the new items —
+                // avoids re-scanning all of masterData each fetch.
+                for (it in newItems) {
+                    val n = newestNoticeDate
+                    if (n == null || it.date.time > n.time) newestNoticeDate = it.date
+                }
+                applyFilters()
             }
         }
     }
@@ -243,11 +279,21 @@ fun BlightApp(activity: MainActivity) {
             val key = clusterThumbKey(lat, lng)
             mapManager.clusterCentersLayer.add(mapManager.createClusterCenterMarker(lat, lng, clusterThumbCache[key]))
             if (!clusterThumbCache.containsKey(key) && key !in clusterThumbInFlight && viewBounds.contains(lat, lng)) {
+            val cachedThumb = clusterThumbCache[key]
+            mapManager.clusterCentersLayer.add(mapManager.createClusterCenterMarker(lat, lng, cachedThumb))
+
+            // Only fetch for centroids inside the current viewport, and only when
+            // we have neither a cached bitmap nor a known-empty sentinel.
+            if (cachedThumb == null
+                && key !in clusterThumbEmpty
+                && key !in clusterThumbInFlight
+                && viewBounds.contains(lat, lng)
+            ) {
                 clusterThumbInFlight.add(key)
                 dataFetcher.fetchNearestMapillaryThumb(lat, lng) { bmp ->
-                    clusterThumbCache[key] = bmp
+                    if (bmp != null) clusterThumbCache.put(key, bmp) else clusterThumbEmpty.add(key)
                     clusterThumbInFlight.remove(key)
-                    if (bmp != null) applyFilters()
+                    if (bmp != null) scheduleClusterRedraw()
                 }
             }
         }
@@ -274,6 +320,86 @@ fun BlightApp(activity: MainActivity) {
                 mapManager.demolitionsLayer.add(mapManager.createEmojiMarker(d.lat, d.lng, "🏗️", "Demolition"))
             }
             mapView.invalidate()
+            val fallback = cats[0].name
+            val updatedPins = pins.map { if (it.category == cat.name) it.copy(category = fallback) else it }
+            storageManager.saveUserPins(updatedPins)
+            storageManager.savePinCategories(cats)
+            applyFilters()
+        } else {
+            cats.removeAll { it.name == cat.name }
+            storageManager.savePinCategories(cats)
+        }
+        pinCategoryAdapter.updateData(cats)
+    }
+
+    private fun triggerScrape() {
+        scrapeStatus.visibility = View.VISIBLE
+        scrapeStatus.text = "🔄 Triggering Update..."
+        scrapeStatus.setBackgroundColor(Color.parseColor("#FFBF00"))
+        scrapeStatus.setTextColor(Color.BLACK)
+
+        dataFetcher.triggerScrape({
+            scrapeStatus.text = "✅ Update Complete!"
+            scrapeStatus.setBackgroundColor(Color.GREEN)
+            filterManager.masterData.clear()
+            newestNoticeDate = null
+            fetchData()
+            hideScrapeStatusDelayed()
+        }, { err ->
+            scrapeStatus.text = "❌ $err"
+            scrapeStatus.setBackgroundColor(Color.RED)
+            scrapeStatus.setTextColor(Color.WHITE)
+            hideScrapeStatusDelayed()
+        })
+    }
+
+    private fun hideScrapeStatusDelayed() {
+        scrapeStatus.postDelayed({
+            scrapeStatus.visibility = View.GONE
+            scrapeStatus.setBackgroundColor(Color.parseColor("#FFBF00"))
+            scrapeStatus.setTextColor(Color.BLACK)
+        }, 5000)
+    }
+
+    private fun generateQR() {
+        val notes = storageManager.getAllNotesAsMap()
+        val pins = storageManager.loadUserPins()
+        val cats = storageManager.loadPinCategories()
+
+        if (notes.isEmpty() && pins.isEmpty()) {
+            Toast.makeText(this, "No intel to beam.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val json = JSONObject()
+        val stashArray = JSONArray()
+        notes.forEach { (k, v) ->
+            val o = JSONObject()
+            o.put("a", k)
+            o.put("n", v)
+            stashArray.put(o)
+        }
+        json.put("stash", stashArray)
+
+        val pinsArray = JSONArray()
+        pins.forEach { p ->
+            val o = JSONObject()
+            o.put("id", p.id)
+            o.put("lat", p.lat)
+            o.put("lng", p.lng)
+            o.put("cat", p.category)
+            o.put("t", p.title)
+            o.put("n", p.note)
+            pinsArray.put(o)
+        }
+        json.put("pins", pinsArray)
+
+        val catsArray = JSONArray()
+        cats.forEach { c ->
+            val o = JSONObject()
+            o.put("e", c.emoji)
+            o.put("n", c.name)
+            catsArray.put(o)
         }
         dataFetcher.fetchOsmFeatures { rows ->
             for (d in rows) {
@@ -306,12 +432,12 @@ fun BlightApp(activity: MainActivity) {
             val lng = sLng / g.size
             if (!viewBounds.contains(lat, lng)) continue
             val key = clusterThumbKey(lat, lng)
-            if (clusterThumbCache.containsKey(key) || key in clusterThumbInFlight) continue
+            if (clusterThumbCache[key] != null || key in clusterThumbEmpty || key in clusterThumbInFlight) continue
             clusterThumbInFlight.add(key)
             dataFetcher.fetchNearestMapillaryThumb(lat, lng) { bmp ->
-                clusterThumbCache[key] = bmp
+                if (bmp != null) clusterThumbCache.put(key, bmp) else clusterThumbEmpty.add(key)
                 clusterThumbInFlight.remove(key)
-                if (bmp != null) applyFilters()
+                if (bmp != null) scheduleClusterRedraw()
             }
         }
     }
@@ -356,6 +482,23 @@ fun BlightApp(activity: MainActivity) {
                 applyFilters()
                 return true
             }
+    /**
+     * Coalesce multiple Mapillary downloads landing in quick succession into a
+     * single applyFilters() pass instead of one redraw per thumbnail.
+     */
+    private fun scheduleClusterRedraw() {
+        redrawHandler.removeCallbacks(redrawRunnable)
+        redrawHandler.postDelayed(redrawRunnable, CLUSTER_REDRAW_DEBOUNCE_MS)
+    }
+
+    private fun updateDataFreshnessBadge() {
+        val badge = findViewById<TextView>(R.id.data_freshness_badge) ?: return
+        val newest = newestNoticeDate
+        if (newest == null) {
+            badge.text = "DATA: —"
+            badge.setTextColor(Color.parseColor("#888888"))
+            badge.background = ContextCompat.getDrawable(this, R.drawable.rounded_bg_grey_border)
+            return
         }
         val overlay = MapEventsOverlay(receiver)
         mapView.overlays.add(0, overlay)
@@ -366,6 +509,17 @@ fun BlightApp(activity: MainActivity) {
     LaunchedEffect(Unit) {
         fetchData()
         fetchExtras()
+    private fun ghostProtocol() {
+        storageManager.clearAll()
+        alprCache.clear()
+        clusterThumbCache.evictAll()
+        clusterThumbEmpty.clear()
+        clusterThumbInFlight.clear()
+        newestNoticeDate = null
+        redrawHandler.removeCallbacks(redrawRunnable)
+        if (locationOverlay.isMyLocationEnabled) locationOverlay.disableMyLocation()
+        finish()
+        startActivity(intent)
     }
 
     // Debounced refetch on every map move. `pendingRef` is a one-slot holder so

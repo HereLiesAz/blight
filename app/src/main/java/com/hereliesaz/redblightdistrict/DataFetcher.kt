@@ -21,11 +21,8 @@ import org.osmdroid.util.BoundingBox
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Locale
-import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
-import kotlin.math.sin
-import kotlin.math.sqrt
 
 class DataFetcher {
     private val client = OkHttpClient()
@@ -508,10 +505,13 @@ class DataFetcher {
         val dLat = 0.00036
         val dLng = 0.00036 / max(0.1, cos(lat * Math.PI / 180.0))
         val bbox = "${lng - dLng},${lat - dLat},${lng + dLng},${lat + dLat}"
-        val encodedToken = java.net.URLEncoder.encode(MAPILLARY_TOKEN, "UTF-8")
-        val url = ("https://graph.mapillary.com/images?access_token=$encodedToken" +
-            "&fields=id,thumb_256_url,computed_geometry&bbox=$bbox&limit=8")
-            .toHttpUrlOrNull()
+        val url = "https://graph.mapillary.com/images".toHttpUrlOrNull()
+            ?.newBuilder()
+            ?.addQueryParameter("access_token", MAPILLARY_TOKEN)
+            ?.addQueryParameter("fields", "id,thumb_256_url,computed_geometry")
+            ?.addQueryParameter("bbox", bbox)
+            ?.addQueryParameter("limit", "8")
+            ?.build()
         if (url == null) {
             mainHandler.post { onResult(null) }
             return
@@ -544,7 +544,7 @@ class DataFetcher {
                             val cLat = coords.optDouble(1, Double.NaN)
                             if (cLat.isNaN() || cLng.isNaN()) continue
                             if (tu == null) continue
-                            val d = haversineMeters(lat, lng, cLat, cLng)
+                            val d = FilterManager.haversineMeters(lat, lng, cLat, cLng)
                             if (d < bestDist) { bestDist = d; best = tu }
                         }
                         best ?: firstAny
@@ -576,15 +576,5 @@ class DataFetcher {
                 onResult(bmp)
             }
         })
-    }
-
-    private fun haversineMeters(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
-        val r = 6371000.0
-        val toRad = { x: Double -> x * Math.PI / 180.0 }
-        val dLat = toRad(lat2 - lat1)
-        val dLng = toRad(lng2 - lng1)
-        val a = sin(dLat / 2) * sin(dLat / 2) +
-            cos(toRad(lat1)) * cos(toRad(lat2)) * sin(dLng / 2) * sin(dLng / 2)
-        return r * 2 * atan2(sqrt(a), sqrt(1 - a))
     }
 }
