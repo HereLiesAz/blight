@@ -1215,6 +1215,7 @@
             const minLon = Math.floor(bbox.getWest() / size) * size;
             const maxLon = Math.floor(bbox.getEast() / size) * size;
             const keys = [];
+            if (size <= 0) return [];
             for (let lat = minLat; lat <= maxLat; lat += size) {
                 for (let lon = minLon; lon <= maxLon; lon += size) {
                     keys.push(`${lat}/${lon}`);
